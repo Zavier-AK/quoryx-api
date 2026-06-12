@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime
+from typing import Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -87,6 +88,67 @@ async def sync_entity_from_token(token: OAuthToken, db: Session) -> dict:
         action = "created"
 
     logger.info("Entity %s: %s (tenant_id=%s)", action, org_name, token.tenant_id)
+    return {
+        "action": action,
+        "entity": {
+            "id": str(entity.id),
+            "tenant_id": entity.tenant_id,
+            "org_name": entity.org_name,
+            "currency": entity.currency,
+            "country_code": entity.country_code,
+            "connected_at": (
+                entity.connected_at.isoformat() if entity.connected_at else None
+            ),
+        },
+    }
+
+
+async def sync_economic_entity_from_token(
+    token: OAuthToken, db: Session, self_data: Optional[dict] = None
+) -> dict:
+    """
+    Upsert the E-conomic agreement behind `token` into the entities table using
+    the /self payload. Mirrors sync_entity_from_token but for E-conomic's format
+    (no Xero-style tenant header; the grant token IS the agreement identity).
+    """
+    # Import here to avoid a circular import at module load.
+    from app.api.economic import fetch_economic_self  # noqa: PLC0415
+
+    if self_data is None:
+        self_data = await fetch_economic_self(token.access_token)
+
+    company = self_data.get("company") or {}
+    settings_blk = self_data.get("settings") or {}
+
+    org_name = company.get("name") or f"Agreement {token.tenant_id}"
+    currency = settings_blk.get("baseCurrency") or "DKK"
+    # /self returns a full country name (e.g. "Denmark"); column is String(3).
+    country = (company.get("country") or "")[:3].upper() or None
+
+    entity = db.query(Entity).filter(Entity.tenant_id == token.tenant_id).first()
+    if entity:
+        entity.org_name = org_name
+        entity.currency = currency
+        entity.country_code = country
+        db.commit()
+        db.refresh(entity)
+        action = "updated"
+    else:
+        entity = Entity(
+            tenant_id=token.tenant_id,
+            org_name=org_name,
+            currency=currency,
+            country_code=country,
+            connected_at=datetime.utcnow(),
+        )
+        db.add(entity)
+        db.commit()
+        db.refresh(entity)
+        action = "created"
+
+    logger.info(
+        "E-conomic entity %s: %s (tenant_id=%s)", action, org_name, token.tenant_id
+    )
     return {
         "action": action,
         "entity": {

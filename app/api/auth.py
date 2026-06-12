@@ -168,3 +168,101 @@ async def quickbooks_callback(
         "provider": "quickbooks",
         "token_id": str(token.id),
     }
+
+
+@router.get("/economic/login")
+def economic_login(entity_name: Optional[str] = Query(None)):
+    """
+    Redirect the user to the app's E-conomic Installation URL to grant access.
+    E-conomic returns the permanent grant token to our callback as ?token=xxx.
+    """
+    url, state = oauth_service.get_economic_install_url()
+    _pending_states[state] = {"provider": "economic", "entity_name": entity_name}
+    logger.info("Initiating E-conomic connect flow. entity_name=%s", entity_name)
+    return RedirectResponse(url=url)
+
+
+@router.get("/economic/callback")
+async def economic_callback(
+    token: str = Query(...),
+    state: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    """
+    Handle the E-conomic connect callback:
+    - Validate state token
+    - Resolve the agreement number via GET /self (E-conomic's tenant identity)
+    - Upsert the OAuthToken keyed on tenant_id (supports multiple agreements)
+    - Auto-sync the connected entity into the entities table
+
+    The grant token is permanent: there is no code exchange, refresh, or expiry.
+    """
+    state_data = _pending_states.pop(state, None)
+    if not state_data or state_data.get("provider") != "economic":
+        raise HTTPException(status_code=400, detail="Invalid or expired state token")
+
+    # Identify the agreement this grant token belongs to. Import here to avoid a
+    # circular import at module load (economic router imports from auth indirectly).
+    from app.api.economic import fetch_economic_self  # noqa: PLC0415
+
+    try:
+        self_data = await fetch_economic_self(token)
+    except Exception as exc:
+        logger.error("E-conomic /self lookup failed: %s", exc)
+        raise HTTPException(status_code=502, detail=f"E-conomic connect failed: {exc}")
+
+    tenant_id = str(self_data.get("agreementNumber") or "")
+    if not tenant_id:
+        raise HTTPException(
+            status_code=502, detail="E-conomic /self did not return an agreementNumber"
+        )
+
+    # Upsert keyed on tenant_id + provider so each agreement gets its own row.
+    existing = (
+        db.query(OAuthToken)
+        .filter(OAuthToken.tenant_id == tenant_id, OAuthToken.provider == "economic")
+        .first()
+    )
+    if existing:
+        existing.access_token = token
+        existing.refresh_token = None
+        existing.expires_at = None
+        db.commit()
+        db.refresh(existing)
+        oauth_token = existing
+    else:
+        oauth_token = OAuthToken(
+            user_id=tenant_id,
+            provider="economic",
+            access_token=token,
+            refresh_token=None,
+            expires_at=None,
+            tenant_id=tenant_id,
+        )
+        db.add(oauth_token)
+        db.commit()
+        db.refresh(oauth_token)
+
+    logger.info(
+        "E-conomic connected. token_id=%s tenant_id=%s entity_name=%s",
+        oauth_token.id,
+        tenant_id,
+        state_data.get("entity_name"),
+    )
+
+    # Auto-sync the entity — import here to avoid circular dependency
+    from app.api.entities import sync_economic_entity_from_token  # noqa: PLC0415
+
+    try:
+        entity_result = await sync_economic_entity_from_token(oauth_token, db, self_data)
+    except Exception as exc:
+        logger.warning("Entity auto-sync failed after E-conomic connect (token saved): %s", exc)
+        entity_result = None
+
+    return {
+        "status": "connected",
+        "provider": "economic",
+        "token_id": str(oauth_token.id),
+        "tenant_id": oauth_token.tenant_id,
+        "entity": entity_result,
+    }

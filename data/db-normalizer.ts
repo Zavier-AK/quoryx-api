@@ -4,7 +4,7 @@
 // Transaction type. Maps DB column names to domain fields.
 // ============================================================
 
-import { Transaction, SourceType } from './types';
+import { Transaction, SourceType, SourceSystem } from './types';
 import { RawTransaction } from './db-adapter';
 import { randomUUID } from 'crypto';
 
@@ -47,12 +47,30 @@ export function normalizeDbTransaction(
         }
     }
 
+    // Map the DB provider column to the internal SourceSystem. Each provider is
+    // listed explicitly so a new provider can't silently inherit Xero's label.
+    let sourceSystem: SourceSystem;
+    switch (raw.provider) {
+        case 'quickbooks':
+            sourceSystem = 'quickbooks';
+            break;
+        case 'economic':
+            sourceSystem = 'economic';
+            break;
+        case 'xero':
+            sourceSystem = 'xero';
+            break;
+        default:
+            console.warn(`Unknown provider: ${raw.provider} — defaulting to xero`);
+            sourceSystem = 'xero';
+    }
+
     return {
         id: randomUUID(),
         entityId: raw.entity_id,
         entityName: raw.entity_id,
         entityGroupId,
-        sourceSystem: raw.provider === 'quickbooks' ? 'quickbooks' : 'xero',
+        sourceSystem,
         sourceId: raw.external_id ?? raw.id,
         sourceType,
         date: new Date(raw.transaction_date),

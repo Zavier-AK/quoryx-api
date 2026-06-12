@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.api import health, auth, transactions, xero, entities, reconciliation
+from app.api import health, auth, transactions, xero, economic, entities, reconciliation
 
 logging.basicConfig(
     level=logging.INFO,
@@ -34,5 +34,6 @@ app.include_router(health.router, prefix=API_PREFIX)
 app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(transactions.router, prefix=API_PREFIX)
 app.include_router(xero.router, prefix=API_PREFIX)
+app.include_router(economic.router, prefix=API_PREFIX)
 app.include_router(entities.router, prefix=API_PREFIX)
 app.include_router(reconciliation.router, prefix=API_PREFIX)

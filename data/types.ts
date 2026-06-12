@@ -6,7 +6,7 @@
 
 // --- Type Aliases ---
 
-export type SourceSystem = 'xero' | 'quickbooks';
+export type SourceSystem = 'xero' | 'quickbooks' | 'economic';
 export type SourceType = 'invoice' | 'bill' | 'journal';
 export type MatchType = 'exact' | 'fuzzy' | 'llm_assisted';
 

@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     QB_REDIRECT_URI: str = "http://localhost:8000/api/auth/quickbooks/callback"
     QB_ENVIRONMENT: str = "sandbox"
 
+    # E-conomic uses static header tokens, not OAuth2. The app secret token is
+    # permanent and identifies our app; the per-customer grant token never expires.
+    ECONOMIC_APP_SECRET_TOKEN: str = ""
+    ECONOMIC_INSTALLATION_URL: str = ""
+    ECONOMIC_REDIRECT_URI: str = "http://localhost:8000/api/auth/economic/callback"
+
     class Config:
         env_file = ".env"
         case_sensitive = True
