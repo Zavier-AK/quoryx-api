@@ -6,9 +6,11 @@ from typing import Optional
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
+from app.core.auth import require_service_key, require_user_or_service
+from app.core.ratelimit import EXPENSIVE_LIMIT, limiter
 from app.models.database import get_db
 from app.models.entity import Entity
 from app.models.transaction import OAuthToken, ReconciliationStatus, Transaction
@@ -137,14 +139,14 @@ async def _get_stored_token(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/self")
+@router.get("/self", dependencies=[Depends(require_user_or_service)])
 async def get_self(db: Session = Depends(get_db)):
     """Return company/agreement details for the connected E-conomic agreement."""
     token = await _get_stored_token(db)
     return await fetch_economic_self(token.access_token)
 
 
-@router.get("/invoices/booked")
+@router.get("/invoices/booked", dependencies=[Depends(require_user_or_service)])
 async def get_booked_invoices(db: Session = Depends(get_db)):
     """Return the first page of booked sales invoices (for inspection)."""
     token = await _get_stored_token(db)
@@ -313,8 +315,10 @@ async def _ingest_for_entity(entity: Entity, token: OAuthToken, db: Session) -> 
     }
 
 
-@router.post("/ingest")
+@router.post("/ingest", dependencies=[Depends(require_service_key)])
+@limiter.limit(EXPENSIVE_LIMIT)
 async def ingest_transactions(
+    request: Request,
     entity_id: Optional[UUID] = Query(None),
     db: Session = Depends(get_db),
 ):

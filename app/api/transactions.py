@@ -4,11 +4,13 @@ from typing import Optional
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from datetime import datetime
 
+from app.core.auth import require_service_key, require_user, require_user_or_service
+from app.core.ratelimit import EXPENSIVE_LIMIT, limiter
 from app.models.database import get_db
 from app.models.transaction import OAuthToken, ReconciliationStatus, Transaction
 from app.services.oauth_service import oauth_service
@@ -53,8 +55,9 @@ class TransactionResponse(BaseModel):
         from_attributes = True
 
 
-@router.get("/fetch")
-async def fetch_xero_invoices(db: Session = Depends(get_db)):
+@router.get("/fetch", dependencies=[Depends(require_user_or_service)])
+@limiter.limit(EXPENSIVE_LIMIT)
+async def fetch_xero_invoices(request: Request, db: Session = Depends(get_db)):
     """
     Fetch invoices from the Xero API.
     Retrieves the stored OAuth token for default_user, refreshes it if expired,
@@ -112,7 +115,12 @@ async def fetch_xero_invoices(db: Session = Depends(get_db)):
     return resp.json()
 
 
-@router.post("/", response_model=TransactionResponse, status_code=201)
+@router.post(
+    "/",
+    response_model=TransactionResponse,
+    status_code=201,
+    dependencies=[Depends(require_service_key)],
+)
 def create_transaction(payload: TransactionCreate, db: Session = Depends(get_db)):
     """Ingest a transaction and attempt immediate reconciliation."""
     transaction = Transaction(**payload.model_dump())
@@ -126,7 +134,11 @@ def create_transaction(payload: TransactionCreate, db: Session = Depends(get_db)
     return transaction
 
 
-@router.get("/", response_model=list[TransactionResponse])
+@router.get(
+    "/",
+    response_model=list[TransactionResponse],
+    dependencies=[Depends(require_user)],
+)
 def list_transactions(
     entity_id: Optional[UUID] = None,
     status: Optional[str] = None,
@@ -144,7 +156,11 @@ def list_transactions(
     return query.order_by(Transaction.transaction_date.desc()).all()
 
 
-@router.get("/{transaction_id}", response_model=TransactionResponse)
+@router.get(
+    "/{transaction_id}",
+    response_model=TransactionResponse,
+    dependencies=[Depends(require_user)],
+)
 def get_transaction(transaction_id: UUID, db: Session = Depends(get_db)):
     """Fetch a single transaction by ID."""
     transaction = db.query(Transaction).filter(Transaction.id == transaction_id).first()
@@ -153,7 +169,11 @@ def get_transaction(transaction_id: UUID, db: Session = Depends(get_db)):
     return transaction
 
 
-@router.post("/{transaction_id}/reconcile", response_model=TransactionResponse)
+@router.post(
+    "/{transaction_id}/reconcile",
+    response_model=TransactionResponse,
+    dependencies=[Depends(require_service_key)],
+)
 def reconcile_transaction(transaction_id: UUID, db: Session = Depends(get_db)):
     """Manually trigger reconciliation for a transaction."""
     transaction = db.query(Transaction).filter(Transaction.id == transaction_id).first()

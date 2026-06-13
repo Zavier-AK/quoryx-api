@@ -6,6 +6,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.auth import require_service_key, require_user
 from app.models.database import get_db
 from app.models.entity import Entity
 from app.models.transaction import OAuthToken
@@ -164,7 +165,7 @@ async def sync_economic_entity_from_token(
     }
 
 
-@router.post("/sync")
+@router.post("/sync", dependencies=[Depends(require_service_key)])
 async def sync_entities(db: Session = Depends(get_db)):
     """
     Sync all connected Xero organisations into the entities table.
@@ -192,7 +193,7 @@ async def sync_entities(db: Session = Depends(get_db)):
     return results[0] if len(results) == 1 else results
 
 
-@router.get("/")
+@router.get("/", dependencies=[Depends(require_user)])
 def list_entities(db: Session = Depends(get_db)):
     """List all connected Xero organisations."""
     entities = db.query(Entity).order_by(Entity.connected_at.desc()).all()

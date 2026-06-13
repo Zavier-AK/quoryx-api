@@ -4,10 +4,12 @@ from datetime import datetime, timedelta
 from typing import Literal, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core.auth import require_service_key, require_user
+from app.core.ratelimit import EXPENSIVE_LIMIT, limiter
 from app.models.database import get_db
 from app.models.entity import Entity, IntercompanyTransaction
 from app.models.transaction import Transaction
@@ -23,7 +25,7 @@ ALLOWED_STATUSES = {"matched", "reconciled"}
 # POST /detect
 # ---------------------------------------------------------------------------
 
-@router.post("/detect")
+@router.post("/detect", dependencies=[Depends(require_service_key)])
 def detect_intercompany(db: Session = Depends(get_db)):
     """
     Scan all transactions across all entities, group by reference, and flag
@@ -212,7 +214,7 @@ def _pair_to_dict(pair: IntercompanyTransaction, db: Session) -> dict:
     }
 
 
-@router.get("/pairs")
+@router.get("/pairs", dependencies=[Depends(require_user)])
 def list_pairs(
     status: str = None,
     db: Session = Depends(get_db),
@@ -243,7 +245,7 @@ class ScorerUpdate(BaseModel):
     review_required: Optional[bool] = None
 
 
-@router.patch("/pairs/{pair_id}/status")
+@router.patch("/pairs/{pair_id}/status", dependencies=[Depends(require_service_key)])
 def update_pair_status(
     pair_id: UUID,
     body: ScorerUpdate,
@@ -288,7 +290,7 @@ def update_pair_status(
 # GET /summary
 # ---------------------------------------------------------------------------
 
-@router.get("/summary")
+@router.get("/summary", dependencies=[Depends(require_user)])
 def reconciliation_summary(db: Session = Depends(get_db)):
     """
     Return reconciliation counts broken down by status (global) and per entity.
@@ -336,8 +338,9 @@ def reconciliation_summary(db: Session = Depends(get_db)):
 # POST /run
 # ---------------------------------------------------------------------------
 
-@router.post("/run")
-def run_reconciliation(db: Session = Depends(get_db)):
+@router.post("/run", dependencies=[Depends(require_service_key)])
+@limiter.limit(EXPENSIVE_LIMIT)
+def run_reconciliation(request: Request, db: Session = Depends(get_db)):
     """
     Trigger a full reconciliation run.
     Runs the same detection logic as /detect and returns a pair summary.

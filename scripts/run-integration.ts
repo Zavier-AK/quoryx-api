@@ -14,7 +14,17 @@ import { fetchUnmatchedPairs, fetchTransactionPair, fetchEntityNames, Intercompa
 import { normalizeDbTransaction } from '../data/db-normalizer';
 import { runMatchingEngine } from '../matching/engine';
 
-const RAILWAY_BASE = 'https://web-production-4f190.up.railway.app';
+const RAILWAY_BASE =
+    process.env.RAILWAY_BASE ?? 'https://web-production-4f190.up.railway.app';
+// Machine-to-machine auth: sent as X-API-Key on every backend call.
+const SERVICE_API_KEY = process.env.SERVICE_API_KEY ?? '';
+
+// Backend calls authenticate with the service key (plus JSON content-type).
+function backendHeaders(): Record<string, string> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (SERVICE_API_KEY) headers['X-API-Key'] = SERVICE_API_KEY;
+    return headers;
+}
 
 // --- Helper: Trigger detection endpoint ---
 
@@ -23,6 +33,7 @@ async function triggerDetection(): Promise<void> {
         console.log('Triggering detection endpoint...');
         await fetch(`${RAILWAY_BASE}/api/reconciliation/run`, {
             method: 'POST',
+            headers: backendHeaders(),
         });
     } catch (err) {
         console.warn('Detection trigger failed — continuing:', err);
@@ -37,7 +48,7 @@ async function patchPairStatus(pairId: string, payload: object): Promise<boolean
             `${RAILWAY_BASE}/api/reconciliation/pairs/${pairId}/status`,
             {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
+                headers: backendHeaders(),
                 body: JSON.stringify(payload),
             }
         );

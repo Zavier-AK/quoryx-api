@@ -7,9 +7,11 @@ from typing import Optional
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
+from app.core.auth import require_service_key, require_user_or_service
+from app.core.ratelimit import EXPENSIVE_LIMIT, limiter
 from app.models.database import get_db
 from app.models.entity import Entity
 from app.models.transaction import OAuthToken, ReconciliationStatus, Transaction
@@ -135,21 +137,21 @@ async def _xero_get(path: str, token: OAuthToken, db: Session) -> dict:
     return resp.json()
 
 
-@router.get("/organisation")
+@router.get("/organisation", dependencies=[Depends(require_user_or_service)])
 async def get_organisation(db: Session = Depends(get_db)):
     """Return details of the connected Xero organisation."""
     token = await _get_stored_token(db)
     return await _xero_get("Organisation", token, db)
 
 
-@router.get("/accounts")
+@router.get("/accounts", dependencies=[Depends(require_user_or_service)])
 async def get_accounts(db: Session = Depends(get_db)):
     """Return the chart of accounts for the connected Xero organisation."""
     token = await _get_stored_token(db)
     return await _xero_get("Accounts", token, db)
 
 
-@router.get("/transactions")
+@router.get("/transactions", dependencies=[Depends(require_user_or_service)])
 async def get_bank_transactions(db: Session = Depends(get_db)):
     """Return bank transactions for the connected Xero organisation."""
     token = await _get_stored_token(db)
@@ -229,8 +231,10 @@ async def _ingest_for_entity(
     }
 
 
-@router.post("/ingest")
+@router.post("/ingest", dependencies=[Depends(require_service_key)])
+@limiter.limit(EXPENSIVE_LIMIT)
 async def ingest_transactions(
+    request: Request,
     entity_id: Optional[UUID] = Query(None),
     db: Session = Depends(get_db),
 ):

@@ -4,9 +4,20 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     APP_ENV: str = "development"
     APP_SECRET_KEY: str = "change-me"
-    APP_DEBUG: bool = True
+    # Secure by default: /docs and /redoc are only exposed when explicitly enabled.
+    APP_DEBUG: bool = False
 
     DATABASE_URL: str = "sqlite:///./quoryx.db"
+
+    # --- API security (Phase 1) ---
+    # Master switch for the auth layer. Lets prod deploy the code, set the secrets
+    # and update callers, then flip auth on without a redeploy gap.
+    AUTH_ENABLED: bool = True
+    # Shared secret for machine-to-machine callers (e.g. run-integration.ts) sent
+    # as the X-API-Key header.
+    SERVICE_API_KEY: str = ""
+    # Supabase project JWT secret (HS256) used to verify frontend bearer tokens.
+    SUPABASE_JWT_SECRET: str = ""
 
     # Used by the TypeScript engine / integration scripts, but declared here so a
     # shared .env containing them does not break the Python app on local boot.

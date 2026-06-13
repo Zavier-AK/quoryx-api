@@ -2,8 +2,12 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from app.core.config import settings
+from app.core.ratelimit import limiter
 from app.api import health, auth, transactions, xero, economic, entities, reconciliation
 
 logging.basicConfig(
@@ -27,6 +31,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Rate limiting: SlowAPIMiddleware enforces the default per-IP limit on every
+# route; expensive routes layer a tighter @limiter.limit(...) on top.
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 API_PREFIX = "/api"
 
