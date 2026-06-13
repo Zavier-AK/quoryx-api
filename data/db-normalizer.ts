@@ -20,7 +20,8 @@ import { randomUUID } from 'crypto';
 export function normalizeDbTransaction(
     raw: RawTransaction,
     entityGroupId: string,
-    isIntercompany: boolean
+    isIntercompany: boolean,
+    entityName?: string
 ): Transaction {
     // Normalize sourceType. Match by prefix so Xero compound types
     // (RECEIVE-OVERPAYMENT, SPEND-PREPAYMENT, SPEND-TRANSFER, ...) collapse to
@@ -88,7 +89,9 @@ export function normalizeDbTransaction(
     return {
         id: randomUUID(),
         entityId: raw.entity_id,
-        entityName: raw.entity_id,
+        // Real org name drives the counterparty dimension (contact name vs the
+        // opposite entity's name). Fall back to the UUID only if no name is known.
+        entityName: entityName?.trim() || raw.entity_id,
         entityGroupId,
         sourceSystem,
         sourceId: raw.external_id ?? raw.id,

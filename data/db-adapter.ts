@@ -54,6 +54,24 @@ export interface RawTransaction {
 // --- Public API ---
 
 /**
+ * Fetch all entities as a map of entity_id → org_name.
+ * Used to give transactions their real entity name (for counterparty scoring)
+ * instead of the bare UUID.
+ */
+export async function fetchEntityNames(): Promise<Map<string, string>> {
+    const { data, error } = await getSupabase()
+        .from('entities')
+        .select('id, org_name');
+
+    if (error) throw error;
+    const map = new Map<string, string>();
+    for (const row of data ?? []) {
+        if (row.id && row.org_name) map.set(row.id, row.org_name);
+    }
+    return map;
+}
+
+/**
  * Fetch all unmatched intercompany pairs from Supabase.
  */
 export async function fetchUnmatchedPairs(): Promise<IntercompanyPair[]> {

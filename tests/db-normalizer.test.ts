@@ -99,6 +99,24 @@ describe('normalizeDbTransaction — date safety', () => {
     });
 });
 
+describe('normalizeDbTransaction — entity name', () => {
+    it('uses the provided real entity name (drives counterparty scoring)', () => {
+        const tx = normalizeDbTransaction(makeRaw({ entity_id: 'uuid-123' }), 'g', true, 'Quoryx Technologies');
+        expect(tx.entityName).toBe('Quoryx Technologies');
+        expect(tx.entityId).toBe('uuid-123');
+    });
+
+    it('falls back to the entity UUID when no name is given', () => {
+        const tx = normalizeDbTransaction(makeRaw({ entity_id: 'uuid-123' }), 'g', true);
+        expect(tx.entityName).toBe('uuid-123');
+    });
+
+    it('falls back to the UUID when the name is blank', () => {
+        const tx = normalizeDbTransaction(makeRaw({ entity_id: 'uuid-123' }), 'g', true, '   ');
+        expect(tx.entityName).toBe('uuid-123');
+    });
+});
+
 describe('normalizeDbTransaction — field hygiene', () => {
     it('uppercases/trims currency and defaults empties', () => {
         expect(normalizeDbTransaction(makeRaw({ currency: ' dkk ' }), 'g', true).currency).toBe('DKK');

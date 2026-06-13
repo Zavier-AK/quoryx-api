@@ -10,7 +10,7 @@ import * as dotenv from 'dotenv';
 dotenv.config();
 
 import { Transaction, EntityGroup } from '../data/types';
-import { fetchUnmatchedPairs, fetchTransactionPair, IntercompanyPair } from '../data/db-adapter';
+import { fetchUnmatchedPairs, fetchTransactionPair, fetchEntityNames, IntercompanyPair } from '../data/db-adapter';
 import { normalizeDbTransaction } from '../data/db-normalizer';
 import { runMatchingEngine } from '../matching/engine';
 
@@ -63,6 +63,7 @@ async function main() {
     }
 
     // STEP 3 — Fetch and normalize both transactions per pair
+    const entityNames = await fetchEntityNames();
     const allTransactions: Transaction[] = [];
     // Track: normalized transaction internal ID → original DB row ID
     const internalIdToDbId = new Map<string, string>();
@@ -76,8 +77,12 @@ async function main() {
 
         if (!txPair) continue;
 
-        const source = normalizeDbTransaction(txPair.source, pair.id, true);
-        const target = normalizeDbTransaction(txPair.target, pair.id, true);
+        const source = normalizeDbTransaction(
+            txPair.source, pair.id, true, entityNames.get(txPair.source.entity_id)
+        );
+        const target = normalizeDbTransaction(
+            txPair.target, pair.id, true, entityNames.get(txPair.target.entity_id)
+        );
 
         // Track mapping back to pair transaction IDs for PATCH step
         internalIdToDbId.set(source.id, pair.source_transaction_id);
@@ -96,7 +101,7 @@ async function main() {
     const uniqueEntityIds = [...new Set(allTransactions.map(tx => tx.entityId))];
     const entityGroup: EntityGroup = {
         id: 'live-group',
-        entities: uniqueEntityIds.map(id => ({ id, name: id })),
+        entities: uniqueEntityIds.map(id => ({ id, name: entityNames.get(id) ?? id })),
     };
 
     // STEP 5 — Run matching engine
