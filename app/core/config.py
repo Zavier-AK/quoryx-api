@@ -8,6 +8,12 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str = "sqlite:///./quoryx.db"
 
+    # Used by the TypeScript engine / integration scripts, but declared here so a
+    # shared .env containing them does not break the Python app on local boot.
+    SUPABASE_URL: str = ""
+    SUPABASE_ANON_KEY: str = ""
+    ANTHROPIC_API_KEY: str = ""
+
     XERO_CLIENT_ID: str = ""
     XERO_CLIENT_SECRET: str = ""
     XERO_REDIRECT_URI: str = "http://localhost:8000/api/auth/xero/callback"
@@ -26,6 +32,9 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        # Ignore any other keys present in a shared .env (e.g. keys for other
+        # services / future integrations) instead of raising on startup.
+        extra = "ignore"
 
 
 settings = Settings()
