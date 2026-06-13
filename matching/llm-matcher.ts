@@ -22,34 +22,52 @@ function formatDate(date: Date): string {
     return date.toISOString().slice(0, 10);
 }
 
+// Current Sonnet. The previous pin (claude-sonnet-4-20250514) retires 2026-06-15.
+const LLM_MODEL = 'claude-sonnet-4-6';
+
+// Output schema enforced server-side via structured outputs, so the response is
+// guaranteed to be valid JSON in this shape — no markdown-fence stripping needed.
+const RESPONSE_SCHEMA = {
+    type: 'object',
+    properties: {
+        isMatch: { type: 'boolean' },
+        confidence: { type: 'number' }, // 0.0–1.0; clamped in code (schema can't bound numbers)
+        reasoning: { type: 'string' }, // plain English, shown to the accountant in the UI
+    },
+    required: ['isMatch', 'confidence', 'reasoning'],
+    additionalProperties: false,
+} as const;
+
+// Stable instruction block — identical on every call, so it sits in the cacheable
+// system prefix (volatile per-pair data goes in the user turn). Caching activates
+// once this prefix exceeds Sonnet's ~2048-token minimum — e.g. when confirmed-match
+// few-shot examples are added here — so the structure is forward-looking.
+const SYSTEM_PROMPT =
+    'You are a chartered accountant reviewing intercompany transactions for a group close. ' +
+    'You are given two transactions recorded in different entities. Decide whether they are the ' +
+    'same intercompany event seen from both sides (one entity\'s sale is the other\'s purchase). ' +
+    'Weigh amount, date proximity, direction (invoice vs bill), and counterparty against normal ' +
+    'SMB timing and FX differences. Return your verdict, a 0.0–1.0 confidence, and a one-line ' +
+    'plain-English reason an accountant can act on.';
+
 /**
- * Safely parse the LLM response text into an LLMEvaluation.
- * Strips accidental markdown fences before parsing.
+ * Coerce the structured-output JSON into an LLMEvaluation, clamping confidence.
  */
 function parseResponse(text: string): LLMEvaluation {
-    // Strip markdown fences if present
-    let cleaned = text.trim();
-    if (cleaned.startsWith('```')) {
-        cleaned = cleaned.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
-    }
-
-    const parsed = JSON.parse(cleaned);
-
+    const parsed = JSON.parse(text);
+    const confidence = Number(parsed.confidence);
     return {
         isMatch: Boolean(parsed.isMatch),
-        confidence: Number(parsed.confidence),
-        reasoning: String(parsed.reasoning),
+        confidence: Number.isFinite(confidence) ? Math.max(0, Math.min(1, confidence)) : 0,
+        reasoning: String(parsed.reasoning ?? ''),
     };
 }
 
 /**
- * Build the system + user prompt for the LLM evaluation.
+ * Build the per-pair user message — only the volatile transaction data.
  */
-function buildPrompt(txA: Transaction, txB: Transaction): string {
+function buildUserMessage(txA: Transaction, txB: Transaction): string {
     return [
-        'You are a chartered accountant reviewing intercompany transactions for a group close.',
-        'Determine if these two transactions are the same intercompany event recorded from both sides.',
-        '',
         'Transaction A:',
         `  Entity: ${txA.entityName}`,
         `  Type: ${txA.sourceType}`,
@@ -67,15 +85,6 @@ function buildPrompt(txA: Transaction, txB: Transaction): string {
         `  Description: ${txB.description}`,
         `  Reference: ${txB.reference}`,
         `  Contact: ${txB.contactName}`,
-        '',
-        'Respond with ONLY a JSON object. No markdown. No explanation outside the JSON.',
-        '',
-        'Required shape:',
-        '{',
-        '  "isMatch": boolean,',
-        '  "confidence": number,  // 0.0 to 1.0',
-        '  "reasoning": string    // plain English, shown to accountant in UI',
-        '}',
     ].join('\n');
 }
 
@@ -117,12 +126,24 @@ export async function evaluateWithLLM(
         const client = new Anthropic();
 
         const message = await client.messages.create({
-            model: 'claude-sonnet-4-20250514',
+            model: LLM_MODEL,
             max_tokens: 500,
+            // Stable prefix → cacheable system block; volatile data → user turn.
+            system: [
+                {
+                    type: 'text',
+                    text: SYSTEM_PROMPT,
+                    cache_control: { type: 'ephemeral' },
+                },
+            ],
+            // Structured outputs: response is guaranteed to match RESPONSE_SCHEMA.
+            output_config: {
+                format: { type: 'json_schema', schema: RESPONSE_SCHEMA },
+            },
             messages: [
                 {
                     role: 'user',
-                    content: buildPrompt(txA, txB),
+                    content: buildUserMessage(txA, txB),
                 },
             ],
         });
@@ -137,7 +158,10 @@ export async function evaluateWithLLM(
         const result = parseResponse(block.text);
         cache.set(pairId, result);
         return result;
-    } catch {
+    } catch (err) {
+        // Never throw — but surface the cause so a silent prod failure (e.g. an
+        // API rejection of the request shape) is visible in logs, not invisible.
+        console.warn(`LLM evaluation failed for pair ${pairId}:`, err);
         cache.set(pairId, fallback);
         return fallback;
     }
