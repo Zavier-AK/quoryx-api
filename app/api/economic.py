@@ -1,7 +1,7 @@
 import json
 import logging
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Optional
 from uuid import UUID
 
@@ -27,11 +27,36 @@ ECONOMIC_PAGE_SIZE = 1000
 
 
 def _parse_economic_date(date_str: str) -> datetime:
-    """Parse e-conomic's ISO date string (YYYY-MM-DD) into a naive datetime."""
+    """
+    Parse e-conomic's ISO date string (YYYY-MM-DD) into a naive datetime.
+    Never raises: an empty or malformed value falls back to now() with a warning.
+    """
     if not date_str:
         return datetime.utcnow()
-    # fromisoformat handles both "2022-06-02" and full timestamps.
-    return datetime.fromisoformat(date_str.replace("Z", "+00:00")).replace(tzinfo=None)
+    try:
+        # fromisoformat handles both "2022-06-02" and full timestamps.
+        return datetime.fromisoformat(date_str.replace("Z", "+00:00")).replace(
+            tzinfo=None
+        )
+    except (ValueError, TypeError):
+        logger.warning("Unparseable e-conomic date %r — using now()", date_str)
+        return datetime.utcnow()
+
+
+def _to_decimal(value) -> Decimal:
+    """
+    Parse a money value to Decimal, treating None/blank as 0 (never raises).
+
+    dict.get(key, 0) only defaults on a MISSING key; the API can return the key
+    present with an explicit null, which would make Decimal(str(None)) raise.
+    """
+    if value is None or value == "":
+        return Decimal("0")
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        logger.warning("Unparseable e-conomic amount %r — using 0", value)
+        return Decimal("0")
 
 
 async def _economic_get(
@@ -147,7 +172,7 @@ def _map_economic_invoice(item: dict, entity: Entity, token: OAuthToken) -> dict
         entity_id=entity.id,
         external_id=f"econ-sales-{number}",
         provider="economic",
-        amount=Decimal(str(item.get("grossAmount", 0))),
+        amount=_to_decimal(item.get("grossAmount")),
         currency=item.get("currency") or entity.currency,
         description=(item.get("notes") or {}).get("heading"),
         transaction_date=_parse_economic_date(item.get("date", "")),
@@ -171,7 +196,7 @@ def _map_economic_supplier_invoice(
         entity_id=entity.id,
         external_id=f"econ-supplier-{number}",
         provider="economic",
-        amount=Decimal(str(item.get("grossAmount", item.get("amount", 0)))),
+        amount=_to_decimal(item.get("grossAmount", item.get("amount"))),
         currency=item.get("currency") or entity.currency,
         description=item.get("text") or item.get("description"),
         transaction_date=_parse_economic_date(item.get("date", "")),

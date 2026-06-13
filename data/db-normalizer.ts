@@ -22,13 +22,15 @@ export function normalizeDbTransaction(
     entityGroupId: string,
     isIntercompany: boolean
 ): Transaction {
-    // Normalize sourceType
+    // Normalize sourceType. Match by prefix so Xero compound types
+    // (RECEIVE-OVERPAYMENT, SPEND-PREPAYMENT, SPEND-TRANSFER, ...) collapse to
+    // the correct direction instead of silently falling through to a default.
     const rawType = raw.transaction_type?.toLowerCase().trim() ?? '';
     let sourceType: SourceType;
 
-    if (rawType === 'receive' || rawType === 'invoice') {
+    if (rawType.startsWith('receive') || rawType === 'invoice') {
         sourceType = 'invoice';
-    } else if (rawType === 'spend' || rawType === 'bill') {
+    } else if (rawType.startsWith('spend') || rawType === 'bill') {
         sourceType = 'bill';
     } else if (rawType === 'journal') {
         sourceType = 'journal';
@@ -65,6 +67,24 @@ export function normalizeDbTransaction(
             sourceSystem = 'xero';
     }
 
+    // Coerce amount safely. Number(null) is 0 and Number('x') is NaN; a NaN or
+    // non-finite amount would poison the scorer (it divides by amount), so guard
+    // it down to 0 with a warning rather than letting it flow downstream.
+    const parsedAmount = Math.abs(Number(raw.amount));
+    const amount = Number.isFinite(parsedAmount) ? parsedAmount : 0;
+    if (!Number.isFinite(parsedAmount)) {
+        console.warn(`Invalid amount for ${raw.external_id ?? raw.id}: ${raw.amount}`);
+    }
+
+    // Guard against an unparseable date. An Invalid Date silently produces NaN in
+    // day-difference math; fall back to the epoch so the row surfaces as an
+    // unmatched orphan instead of corrupting a pair's date score.
+    let date = new Date(raw.transaction_date);
+    if (Number.isNaN(date.getTime())) {
+        console.warn(`Invalid date for ${raw.external_id ?? raw.id}: ${raw.transaction_date}`);
+        date = new Date(0);
+    }
+
     return {
         id: randomUUID(),
         entityId: raw.entity_id,
@@ -73,8 +93,8 @@ export function normalizeDbTransaction(
         sourceSystem,
         sourceId: raw.external_id ?? raw.id,
         sourceType,
-        date: new Date(raw.transaction_date),
-        amount: Math.abs(Number(raw.amount)),
+        date,
+        amount,
         currency: raw.currency?.trim().toUpperCase() ?? 'USD',
         description: raw.description?.trim() ?? '',
         reference: raw.reference?.trim() ?? '',
