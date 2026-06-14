@@ -32,3 +32,6 @@ env/
 
 # Claude
 .claude/
+
+# graphify generated output (regenerated on demand)
+graphify-out/
