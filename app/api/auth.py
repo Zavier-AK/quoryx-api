@@ -3,8 +3,10 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core.auth import require_user
 from app.models.database import get_db
 from app.models.transaction import OAuthToken
 from app.services.oauth_service import oauth_service
@@ -182,34 +184,26 @@ def economic_login(entity_name: Optional[str] = Query(None)):
     return RedirectResponse(url=url)
 
 
-@router.get("/economic/callback")
-async def economic_callback(
-    token: str = Query(...),
-    state: str = Query(...),
-    db: Session = Depends(get_db),
-):
+async def _connect_economic(
+    grant_token: str, db: Session, entity_name: Optional[str] = None
+) -> dict:
     """
-    Handle the E-conomic connect callback:
-    - Validate state token
-    - Resolve the agreement number via GET /self (E-conomic's tenant identity)
-    - Upsert the OAuthToken keyed on tenant_id (supports multiple agreements)
-    - Auto-sync the connected entity into the entities table
-
-    The grant token is permanent: there is no code exchange, refresh, or expiry.
+    Resolve an E-conomic grant token to its agreement, upsert the OAuthToken, and
+    sync the entity. Shared by the redirect callback and the manual-paste endpoint.
+    The grant token is permanent — no code exchange, refresh, or expiry.
     """
-    state_data = _pending_states.pop(state, None)
-    if not state_data or state_data.get("provider") != "economic":
-        raise HTTPException(status_code=400, detail="Invalid or expired state token")
-
-    # Identify the agreement this grant token belongs to. Import here to avoid a
-    # circular import at module load (economic router imports from auth indirectly).
+    # Imports here to avoid a circular import at module load.
     from app.api.economic import fetch_economic_self  # noqa: PLC0415
+    from app.api.entities import sync_economic_entity_from_token  # noqa: PLC0415
 
     try:
-        self_data = await fetch_economic_self(token)
+        self_data = await fetch_economic_self(grant_token)
     except Exception as exc:
         logger.error("E-conomic /self lookup failed: %s", exc)
-        raise HTTPException(status_code=502, detail=f"E-conomic connect failed: {exc}")
+        raise HTTPException(
+            status_code=502,
+            detail="Could not verify the agreement token with E-conomic",
+        )
 
     tenant_id = str(self_data.get("agreementNumber") or "")
     if not tenant_id:
@@ -224,7 +218,7 @@ async def economic_callback(
         .first()
     )
     if existing:
-        existing.access_token = token
+        existing.access_token = grant_token
         existing.refresh_token = None
         existing.expires_at = None
         db.commit()
@@ -234,7 +228,7 @@ async def economic_callback(
         oauth_token = OAuthToken(
             user_id=tenant_id,
             provider="economic",
-            access_token=token,
+            access_token=grant_token,
             refresh_token=None,
             expires_at=None,
             tenant_id=tenant_id,
@@ -247,16 +241,15 @@ async def economic_callback(
         "E-conomic connected. token_id=%s tenant_id=%s entity_name=%s",
         oauth_token.id,
         tenant_id,
-        state_data.get("entity_name"),
+        entity_name,
     )
-
-    # Auto-sync the entity — import here to avoid circular dependency
-    from app.api.entities import sync_economic_entity_from_token  # noqa: PLC0415
 
     try:
         entity_result = await sync_economic_entity_from_token(oauth_token, db, self_data)
     except Exception as exc:
-        logger.warning("Entity auto-sync failed after E-conomic connect (token saved): %s", exc)
+        logger.warning(
+            "Entity auto-sync failed after E-conomic connect (token saved): %s", exc
+        )
         entity_result = None
 
     return {
@@ -266,3 +259,35 @@ async def economic_callback(
         "tenant_id": oauth_token.tenant_id,
         "entity": entity_result,
     }
+
+
+@router.get("/economic/callback")
+async def economic_callback(
+    token: str = Query(...),
+    state: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    """Redirect callback: validate state (CSRF), then connect the agreement."""
+    state_data = _pending_states.pop(state, None)
+    if not state_data or state_data.get("provider") != "economic":
+        raise HTTPException(status_code=400, detail="Invalid or expired state token")
+    return await _connect_economic(token, db, state_data.get("entity_name"))
+
+
+class EconomicConnectRequest(BaseModel):
+    token: str
+    entity_name: Optional[str] = None
+
+
+@router.post("/economic/connect", dependencies=[Depends(require_user)])
+async def economic_connect(
+    body: EconomicConnectRequest, db: Session = Depends(get_db)
+):
+    """
+    Manual connect: the customer pastes their E-conomic agreement grant token
+    (the "Connect agreement token" popup). Verifies it via /self and saves it.
+    """
+    token = body.token.strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="Agreement token is required")
+    return await _connect_economic(token, db, body.entity_name)

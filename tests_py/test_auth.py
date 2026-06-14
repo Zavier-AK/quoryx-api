@@ -108,6 +108,13 @@ def test_user_or_service_rejects_anonymous():
 
 # --- Open + flag behavior ---
 
+def test_economic_connect_requires_auth():
+    # Manual token-paste endpoint is user-guarded; anonymous callers are rejected
+    # before the handler runs (no e-conomic network call made).
+    r = client.post("/api/auth/economic/connect", json={"token": "x"})
+    assert r.status_code == 401
+
+
 def test_health_is_open():
     assert client.get("/api/health").status_code == 200
 
