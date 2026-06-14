@@ -103,7 +103,7 @@ async def _xero_get(path: str, token: OAuthToken, db: Session) -> dict:
     except Exception as exc:
         logger.error("Xero token refresh failed: %s", exc)
         raise HTTPException(
-            status_code=502, detail=f"Failed to refresh Xero token: {exc}"
+            status_code=502, detail="Upstream provider error"
         )
 
     url = f"{XERO_API_BASE}/{path}"
@@ -128,11 +128,11 @@ async def _xero_get(path: str, token: OAuthToken, db: Session) -> dict:
         )
         raise HTTPException(
             status_code=502,
-            detail=f"Xero API error {exc.response.status_code}: {exc.response.text}",
+            detail="Upstream provider error",
         )
     except httpx.RequestError as exc:
         logger.error("Xero API request error: %s", exc)
-        raise HTTPException(status_code=502, detail=f"Xero API request failed: {exc}")
+        raise HTTPException(status_code=502, detail="Failed to reach the accounting provider")
 
     return resp.json()
 

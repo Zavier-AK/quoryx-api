@@ -29,7 +29,7 @@ async def sync_entity_from_token(token: OAuthToken, db: Session) -> dict:
         access_token = await oauth_service.get_valid_xero_access_token(token, db)
     except Exception as exc:
         logger.error("Token refresh failed for tenant_id=%s: %s", token.tenant_id, exc)
-        raise HTTPException(status_code=502, detail=f"Token refresh failed: {exc}")
+        raise HTTPException(status_code=502, detail="Upstream provider error")
 
     try:
         async with httpx.AsyncClient() as client:
@@ -50,11 +50,11 @@ async def sync_entity_from_token(token: OAuthToken, db: Session) -> dict:
         )
         raise HTTPException(
             status_code=502,
-            detail=f"Xero API error {exc.response.status_code}: {exc.response.text}",
+            detail="Upstream provider error",
         )
     except httpx.RequestError as exc:
         logger.error("Xero Organisation API request failed: %s", exc)
-        raise HTTPException(status_code=502, detail=f"Xero API request failed: {exc}")
+        raise HTTPException(status_code=502, detail="Failed to reach the accounting provider")
 
     orgs = resp.json().get("Organisations", [])
     if not orgs:

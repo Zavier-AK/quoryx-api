@@ -1,4 +1,9 @@
+import logging
+
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -18,6 +23,11 @@ class Settings(BaseSettings):
     SERVICE_API_KEY: str = ""
     # Supabase project JWT secret (HS256) used to verify frontend bearer tokens.
     SUPABASE_JWT_SECRET: str = ""
+
+    # --- Secrets at rest (Phase 3) ---
+    # urlsafe-base64 Fernet key used to encrypt OAuth tokens at rest. When empty,
+    # encryption no-ops and legacy plaintext tokens pass through unchanged.
+    TOKEN_ENCRYPTION_KEY: str = ""
 
     # Used by the TypeScript engine / integration scripts, but declared here so a
     # shared .env containing them does not break the Python app on local boot.
@@ -46,6 +56,26 @@ class Settings(BaseSettings):
         # Ignore any other keys present in a shared .env (e.g. keys for other
         # services / future integrations) instead of raising on startup.
         extra = "ignore"
+
+    @model_validator(mode="after")
+    def _validate_secure_by_default(self) -> "Settings":
+        if self.APP_ENV == "production" and self.APP_SECRET_KEY in ("", "change-me"):
+            raise ValueError(
+                "APP_SECRET_KEY must be set to a non-default value when APP_ENV=production"
+            )
+        # The following are intentionally warn-only so existing production deploys
+        # (AUTH_ENABLED=false, no TOKEN_ENCRYPTION_KEY) keep booting. Token
+        # encryption already no-ops when TOKEN_ENCRYPTION_KEY is empty.
+        if self.APP_ENV == "production" and not self.TOKEN_ENCRYPTION_KEY:
+            logger.warning(
+                "TOKEN_ENCRYPTION_KEY is not set in production; OAuth tokens are "
+                "stored as plaintext."
+            )
+        if self.APP_ENV == "production" and not self.SERVICE_API_KEY:
+            logger.warning(
+                "SERVICE_API_KEY is not set in production."
+            )
+        return self
 
 
 settings = Settings()

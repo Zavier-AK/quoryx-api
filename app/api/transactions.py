@@ -80,7 +80,7 @@ async def fetch_xero_invoices(request: Request, db: Session = Depends(get_db)):
         logger.error("Xero token refresh failed: %s", exc)
         raise HTTPException(
             status_code=502,
-            detail=f"Failed to refresh Xero access token: {exc}",
+            detail="Upstream provider error",
         )
 
     logger.info(
@@ -105,7 +105,7 @@ async def fetch_xero_invoices(request: Request, db: Session = Depends(get_db)):
         )
         raise HTTPException(
             status_code=502,
-            detail=f"Xero API error {exc.response.status_code}: {exc.response.text}",
+            detail="Upstream provider error",
         )
     except httpx.RequestError as exc:
         logger.error("Xero API request failed: %s", exc)

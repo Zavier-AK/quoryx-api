@@ -86,12 +86,12 @@ async def _economic_get(
         )
         raise HTTPException(
             status_code=502,
-            detail=f"E-conomic API error {exc.response.status_code}: {exc.response.text}",
+            detail="Upstream provider error",
         )
     except httpx.RequestError as exc:
         logger.error("E-conomic API request error: %s", exc)
         raise HTTPException(
-            status_code=502, detail=f"E-conomic API request failed: {exc}"
+            status_code=502, detail="Failed to reach the accounting provider"
         )
     return resp.json()
 

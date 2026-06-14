@@ -4,6 +4,7 @@ from sqlalchemy.orm import relationship
 import uuid
 import enum
 
+from app.core.crypto import EncryptedString
 from app.models.database import Base
 
 
@@ -20,8 +21,8 @@ class OAuthToken(Base):
     id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(String(255), nullable=False, default="default_user")
     provider = Column(String(50), nullable=False)  # "xero" or "quickbooks"
-    access_token = Column(Text, nullable=False)
-    refresh_token = Column(Text, nullable=True)
+    access_token = Column(EncryptedString, nullable=False)
+    refresh_token = Column(EncryptedString, nullable=True)
     expires_at = Column(DateTime, nullable=True)
     tenant_id = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
