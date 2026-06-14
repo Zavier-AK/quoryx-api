@@ -2,14 +2,16 @@ import json
 import logging
 import re
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Optional
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
+from app.core.auth import require_service_key, require_user_or_service
+from app.core.ratelimit import EXPENSIVE_LIMIT, limiter
 from app.models.database import get_db
 from app.models.entity import Entity
 from app.models.transaction import OAuthToken, ReconciliationStatus, Transaction
@@ -20,6 +22,34 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/xero", tags=["xero"])
 
 XERO_API_BASE = "https://api.xero.com/api.xro/2.0"
+
+
+def _normalize_xero_type(raw_type: Optional[str]) -> Optional[str]:
+    """
+    Collapse Xero BankTransaction types to a canonical direction.
+
+    Xero emits RECEIVE, SPEND and compound variants (RECEIVE-OVERPAYMENT,
+    SPEND-PREPAYMENT, SPEND-TRANSFER, ...). Detection and the matching engine key
+    on RECEIVE/SPEND, so store the canonical direction rather than the raw variant.
+    """
+    if not raw_type:
+        return raw_type
+    t = raw_type.upper()
+    if t.startswith("RECEIVE"):
+        return "RECEIVE"
+    if t.startswith("SPEND"):
+        return "SPEND"
+    return raw_type
+
+
+def _to_decimal(value) -> Decimal:
+    """Parse a money value to Decimal, treating None/blank as 0 (never raises)."""
+    if value is None or value == "":
+        return Decimal("0")
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return Decimal("0")
 
 
 def _parse_xero_date(date_str: str) -> datetime:
@@ -107,21 +137,21 @@ async def _xero_get(path: str, token: OAuthToken, db: Session) -> dict:
     return resp.json()
 
 
-@router.get("/organisation")
+@router.get("/organisation", dependencies=[Depends(require_user_or_service)])
 async def get_organisation(db: Session = Depends(get_db)):
     """Return details of the connected Xero organisation."""
     token = await _get_stored_token(db)
     return await _xero_get("Organisation", token, db)
 
 
-@router.get("/accounts")
+@router.get("/accounts", dependencies=[Depends(require_user_or_service)])
 async def get_accounts(db: Session = Depends(get_db)):
     """Return the chart of accounts for the connected Xero organisation."""
     token = await _get_stored_token(db)
     return await _xero_get("Accounts", token, db)
 
 
-@router.get("/transactions")
+@router.get("/transactions", dependencies=[Depends(require_user_or_service)])
 async def get_bank_transactions(db: Session = Depends(get_db)):
     """Return bank transactions for the connected Xero organisation."""
     token = await _get_stored_token(db)
@@ -149,12 +179,12 @@ async def _ingest_for_entity(
         fields = dict(
             entity_id=entity.id,
             transaction_date=_parse_xero_date(xt.get("Date", "")),
-            amount=Decimal(str(xt.get("Total", 0))),
+            amount=_to_decimal(xt.get("Total")),
             currency=xt.get("CurrencyCode") or entity.currency,
             description=first_line.get("Description"),
             contact_name=(xt.get("Contact") or {}).get("Name"),
             account_code=(xt.get("BankAccount") or {}).get("Code"),
-            transaction_type=xt.get("Type"),
+            transaction_type=_normalize_xero_type(xt.get("Type")),
             reference=xt.get("Reference"),
             raw_payload=json.dumps(xt),
             updated_at=datetime.utcnow(),
@@ -201,8 +231,10 @@ async def _ingest_for_entity(
     }
 
 
-@router.post("/ingest")
+@router.post("/ingest", dependencies=[Depends(require_service_key)])
+@limiter.limit(EXPENSIVE_LIMIT)
 async def ingest_transactions(
+    request: Request,
     entity_id: Optional[UUID] = Query(None),
     db: Session = Depends(get_db),
 ):

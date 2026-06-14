@@ -1,13 +1,15 @@
 import logging
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Literal, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core.auth import require_service_key, require_user
+from app.core.ratelimit import EXPENSIVE_LIMIT, limiter
 from app.models.database import get_db
 from app.models.entity import Entity, IntercompanyTransaction
 from app.models.transaction import Transaction
@@ -23,7 +25,7 @@ ALLOWED_STATUSES = {"matched", "reconciled"}
 # POST /detect
 # ---------------------------------------------------------------------------
 
-@router.post("/detect")
+@router.post("/detect", dependencies=[Depends(require_service_key)])
 def detect_intercompany(db: Session = Depends(get_db)):
     """
     Scan all transactions across all entities, group by reference, and flag
@@ -41,73 +43,123 @@ def detect_intercompany(db: Session = Depends(get_db)):
     all_txns = (
         db.query(Transaction)
         .filter(
-            Transaction.reference.isnot(None),
             Transaction.entity_id.isnot(None),
             Transaction.transaction_type.isnot(None),
         )
         .all()
     )
 
-    by_ref: dict = defaultdict(list)
-    for t in all_txns:
-        by_ref[t.reference].append(t)
-
     pairs_created = 0
     pairs_skipped = 0
     pairs = []
+    # Track pairs created in this run so the exact and relaxed passes don't
+    # double-create, and so each transaction is only paired once.
+    seen_keys: set = set()
+    consumed: set = set()
+
+    def _try_create_pair(spend, receive, ref, rule: str) -> None:
+        nonlocal pairs_created, pairs_skipped
+        key = (spend.external_id, receive.external_id)
+        if key in seen_keys:
+            return
+        if spend.external_id in consumed or receive.external_id in consumed:
+            return
+
+        existing = (
+            db.query(IntercompanyTransaction)
+            .filter(
+                IntercompanyTransaction.source_transaction_id == spend.external_id,
+                IntercompanyTransaction.target_transaction_id == receive.external_id,
+            )
+            .first()
+        )
+        seen_keys.add(key)
+        if existing:
+            pairs_skipped += 1
+            consumed.update({spend.external_id, receive.external_id})
+            return
+
+        db.add(
+            IntercompanyTransaction(
+                source_entity_id=spend.entity_id,
+                target_entity_id=receive.entity_id,
+                amount=spend.amount,
+                currency=spend.currency,
+                description=spend.description or receive.description,
+                transaction_date=spend.transaction_date,
+                status="unmatched",
+                source_transaction_id=spend.external_id,
+                target_transaction_id=receive.external_id,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+        )
+        pairs.append(
+            {
+                "reference": ref,
+                "rule": rule,
+                "amount": str(spend.amount),
+                "currency": spend.currency,
+                "description": spend.description,
+                "source_transaction_id": spend.external_id,
+                "target_transaction_id": receive.external_id,
+            }
+        )
+        consumed.update({spend.external_id, receive.external_id})
+        pairs_created += 1
+
+    # --- Pass 1: exact-reference fast path (same provider or cross-provider) ---
+    by_ref: dict = defaultdict(list)
+    for t in all_txns:
+        if t.reference:
+            by_ref[t.reference].append(t)
 
     for ref, txns in by_ref.items():
         if len({t.entity_id for t in txns}) < 2:
             continue
-
         spends = [t for t in txns if t.transaction_type == "SPEND"]
         receives = [t for t in txns if t.transaction_type == "RECEIVE"]
-
         for spend in spends:
             for receive in receives:
                 if spend.entity_id == receive.entity_id:
                     continue
                 if spend.amount != receive.amount or spend.currency != receive.currency:
                     continue
+                _try_create_pair(spend, receive, ref, rule="exact_reference")
 
-                existing = (
-                    db.query(IntercompanyTransaction)
-                    .filter(
-                        IntercompanyTransaction.source_transaction_id == spend.external_id,
-                        IntercompanyTransaction.target_transaction_id == receive.external_id,
-                    )
-                    .first()
-                )
-                if existing:
-                    pairs_skipped += 1
-                    continue
+    # --- Pass 2: relaxed cross-provider candidates ---
+    # Different providers issue independent reference schemes, so genuine
+    # intercompany pairs rarely share a reference. Generate candidates on
+    # direction + currency + amount-within-tolerance + date-window and let the
+    # TypeScript scoring engine assign final confidence.
+    AMOUNT_TOLERANCE = 0.02  # 2%, mirrors the scorer's amount dimension
+    DATE_WINDOW = timedelta(days=30)  # mirrors the scorer's date dimension
 
-                db.add(
-                    IntercompanyTransaction(
-                        source_entity_id=spend.entity_id,
-                        target_entity_id=receive.entity_id,
-                        amount=spend.amount,
-                        currency=spend.currency,
-                        description=spend.description or receive.description,
-                        transaction_date=spend.transaction_date,
-                        status="unmatched",
-                        source_transaction_id=spend.external_id,
-                        target_transaction_id=receive.external_id,
-                        created_at=datetime.utcnow(),
-                        updated_at=datetime.utcnow(),
-                    )
-                )
-                pairs.append(
-                    {
-                        "reference": ref,
-                        "amount": str(spend.amount),
-                        "currency": spend.currency,
-                        "description": spend.description,
-                        "source_transaction_id": spend.external_id,
-                        "target_transaction_id": receive.external_id,
-                    }
-                )
-                pairs_created += 1
+    spends_all = [t for t in all_txns if t.transaction_type == "SPEND"]
+    receives_all = [t for t in all_txns if t.transaction_type == "RECEIVE"]
+
+    for spend in spends_all:
+        if spend.external_id in consumed:
+            continue
+        for receive in receives_all:
+            if receive.external_id in consumed:
+                continue
+            if spend.entity_id == receive.entity_id:
+                continue
+            if spend.currency != receive.currency:
+                continue
+            if spend.provider == receive.provider:
+                continue  # same-provider handled by the exact-reference pass
+            if not spend.amount or not receive.amount:
+                continue
+            amt_diff = abs(float(spend.amount) - float(receive.amount))
+            if amt_diff / float(spend.amount) > AMOUNT_TOLERANCE:
+                continue
+            if abs(spend.transaction_date - receive.transaction_date) > DATE_WINDOW:
+                continue
+            _try_create_pair(
+                spend, receive, ref=spend.reference, rule="relaxed_cross_provider"
+            )
 
     db.commit()
     logger.info(
@@ -162,7 +214,7 @@ def _pair_to_dict(pair: IntercompanyTransaction, db: Session) -> dict:
     }
 
 
-@router.get("/pairs")
+@router.get("/pairs", dependencies=[Depends(require_user)])
 def list_pairs(
     status: str = None,
     db: Session = Depends(get_db),
@@ -193,7 +245,7 @@ class ScorerUpdate(BaseModel):
     review_required: Optional[bool] = None
 
 
-@router.patch("/pairs/{pair_id}/status")
+@router.patch("/pairs/{pair_id}/status", dependencies=[Depends(require_service_key)])
 def update_pair_status(
     pair_id: UUID,
     body: ScorerUpdate,
@@ -238,7 +290,7 @@ def update_pair_status(
 # GET /summary
 # ---------------------------------------------------------------------------
 
-@router.get("/summary")
+@router.get("/summary", dependencies=[Depends(require_user)])
 def reconciliation_summary(db: Session = Depends(get_db)):
     """
     Return reconciliation counts broken down by status (global) and per entity.
@@ -286,8 +338,9 @@ def reconciliation_summary(db: Session = Depends(get_db)):
 # POST /run
 # ---------------------------------------------------------------------------
 
-@router.post("/run")
-def run_reconciliation(db: Session = Depends(get_db)):
+@router.post("/run", dependencies=[Depends(require_service_key)])
+@limiter.limit(EXPENSIVE_LIMIT)
+def run_reconciliation(request: Request, db: Session = Depends(get_db)):
     """
     Trigger a full reconciliation run.
     Runs the same detection logic as /detect and returns a pair summary.

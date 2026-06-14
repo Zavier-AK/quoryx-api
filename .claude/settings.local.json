@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Bash(npx jest:*)",
+      "Bash(npx ts-node:*)",
+      "Bash(pip install *)",
+      "Bash(pip3 install *)",
+      "Bash(python3 -m ensurepip --upgrade)",
+      "Bash(/Library/Developer/CommandLineTools/usr/bin/python3 -m pip install --upgrade pip)",
+      "Bash(pip3 --version)"
+    ]
+  }
+}

@@ -4,9 +4,26 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     APP_ENV: str = "development"
     APP_SECRET_KEY: str = "change-me"
-    APP_DEBUG: bool = True
+    # Secure by default: /docs and /redoc are only exposed when explicitly enabled.
+    APP_DEBUG: bool = False
 
     DATABASE_URL: str = "sqlite:///./quoryx.db"
+
+    # --- API security (Phase 1) ---
+    # Master switch for the auth layer. Lets prod deploy the code, set the secrets
+    # and update callers, then flip auth on without a redeploy gap.
+    AUTH_ENABLED: bool = True
+    # Shared secret for machine-to-machine callers (e.g. run-integration.ts) sent
+    # as the X-API-Key header.
+    SERVICE_API_KEY: str = ""
+    # Supabase project JWT secret (HS256) used to verify frontend bearer tokens.
+    SUPABASE_JWT_SECRET: str = ""
+
+    # Used by the TypeScript engine / integration scripts, but declared here so a
+    # shared .env containing them does not break the Python app on local boot.
+    SUPABASE_URL: str = ""
+    SUPABASE_ANON_KEY: str = ""
+    ANTHROPIC_API_KEY: str = ""
 
     XERO_CLIENT_ID: str = ""
     XERO_CLIENT_SECRET: str = ""
@@ -17,9 +34,18 @@ class Settings(BaseSettings):
     QB_REDIRECT_URI: str = "http://localhost:8000/api/auth/quickbooks/callback"
     QB_ENVIRONMENT: str = "sandbox"
 
+    # E-conomic uses static header tokens, not OAuth2. The app secret token is
+    # permanent and identifies our app; the per-customer grant token never expires.
+    ECONOMIC_APP_SECRET_TOKEN: str = ""
+    ECONOMIC_INSTALLATION_URL: str = ""
+    ECONOMIC_REDIRECT_URI: str = "http://localhost:8000/api/auth/economic/callback"
+
     class Config:
         env_file = ".env"
         case_sensitive = True
+        # Ignore any other keys present in a shared .env (e.g. keys for other
+        # services / future integrations) instead of raising on startup.
+        extra = "ignore"
 
 
 settings = Settings()

@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
+from urllib.parse import quote
 
 import httpx
 from authlib.integrations.httpx_client import AsyncOAuth2Client
@@ -19,6 +20,12 @@ XERO_SCOPES = "accounting.transactions.read accounting.contacts.read accounting.
 QB_AUTHORIZE_URL = "https://appcenter.intuit.com/connect/oauth2"
 QB_TOKEN_URL = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
 QB_SCOPES = "com.intuit.quickbooks.accounting"
+
+# E-conomic authenticates with two static header tokens and has no token
+# refresh/expiry. ECONOMIC_REST_BASE serves sales invoices and /self;
+# ECONOMIC_APP_BASE is the companion OpenAPI host (e.g. supplier invoices).
+ECONOMIC_REST_BASE = "https://restapi.e-conomic.com"
+ECONOMIC_APP_BASE = "https://apis.e-conomic.com"
 
 # Refresh the token this many seconds before it actually expires
 TOKEN_REFRESH_BUFFER_SECONDS = 300
@@ -149,6 +156,35 @@ class OAuthService:
                 datetime.utcfromtimestamp(expires_at_ts) if expires_at_ts else None
             ),
             "realm_id": realm_id,
+        }
+
+    # ------------------------------------------------------------------
+    # E-conomic — static header tokens, no OAuth2 exchange or refresh
+    # ------------------------------------------------------------------
+
+    def get_economic_install_url(self) -> tuple[str, str]:
+        """
+        Return (installation_url, state) for starting the E-conomic connect flow.
+
+        The customer is sent to our app's Installation URL. After granting access,
+        E-conomic redirects to our ECONOMIC_REDIRECT_URI with the grant token as
+        ?token=xxx. We thread `state` through redirectUrl for CSRF protection.
+        """
+        state = generate_state_token()
+        sep = "&" if "?" in settings.ECONOMIC_INSTALLATION_URL else "?"
+        redirect = f"{settings.ECONOMIC_REDIRECT_URI}?state={state}"
+        url = (
+            f"{settings.ECONOMIC_INSTALLATION_URL}{sep}"
+            f"redirectUrl={quote(redirect, safe='')}"
+        )
+        return url, state
+
+    def economic_headers(self, grant_token: str) -> dict:
+        """Return the two static auth headers every E-conomic request needs."""
+        return {
+            "X-AppSecretToken": settings.ECONOMIC_APP_SECRET_TOKEN,
+            "X-AgreementGrantToken": grant_token,
+            "Accept": "application/json",
         }
 
 

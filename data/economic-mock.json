@@ -1,0 +1,58 @@
+{
+  "_comment": "Mock E-conomic data for offline testing of the ingestion + detection + scoring pipeline without a live dev account. Payloads use the real e-conomic REST API shapes (sales invoices verified against the public demo agreement). The two entities below contain a designed intercompany pair sharing reference IC-2026-01: Holdco's sales invoice (RECEIVE) vs Subco's supplier invoice (SPEND).",
+  "entities": [
+    {
+      "tenant_id": "mock-econ-holdco",
+      "org_name": "Holdco ApS",
+      "currency": "DKK",
+      "country_code": "DEN",
+      "sales_invoices": [
+        {
+          "bookedInvoiceNumber": 9001,
+          "date": "2026-01-28",
+          "currency": "DKK",
+          "grossAmount": 12500.00,
+          "recipient": { "name": "Subco ApS" },
+          "references": { "other": "IC-2026-01" },
+          "notes": { "heading": "Management fee Q1 2026" }
+        },
+        {
+          "bookedInvoiceNumber": 1,
+          "date": "2026-02-02",
+          "currency": "DKK",
+          "grossAmount": 87.50,
+          "recipient": { "name": "Customer 1" },
+          "references": {}
+        }
+      ],
+      "supplier_invoices": []
+    },
+    {
+      "tenant_id": "mock-econ-subco",
+      "org_name": "Subco ApS",
+      "currency": "DKK",
+      "country_code": "DEN",
+      "sales_invoices": [
+        {
+          "bookedInvoiceNumber": 2,
+          "date": "2026-02-02",
+          "currency": "DKK",
+          "grossAmount": 1187.50,
+          "recipient": { "name": "Customer with EAN" },
+          "references": {}
+        }
+      ],
+      "supplier_invoices": [
+        {
+          "supplierInvoiceNumber": 7001,
+          "date": "2026-01-30",
+          "currency": "DKK",
+          "grossAmount": 12500.00,
+          "supplier": { "name": "Holdco ApS" },
+          "reference": "IC-2026-01",
+          "text": "Consulting services Q1"
+        }
+      ]
+    }
+  ]
+}
