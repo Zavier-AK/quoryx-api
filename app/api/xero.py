@@ -231,7 +231,7 @@ async def _ingest_for_entity(
     }
 
 
-@router.post("/ingest", dependencies=[Depends(require_service_key)])
+@router.post("/ingest", dependencies=[Depends(require_user_or_service)])
 @limiter.limit(EXPENSIVE_LIMIT)
 async def ingest_transactions(
     request: Request,

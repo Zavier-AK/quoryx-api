@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.core.auth import require_service_key, require_user
+from app.core.auth import require_service_key, require_user, require_user_or_service
 from app.core.ratelimit import EXPENSIVE_LIMIT, limiter
 from app.models.database import get_db
 from app.models.entity import Entity, IntercompanyTransaction
@@ -245,7 +245,7 @@ class ScorerUpdate(BaseModel):
     review_required: Optional[bool] = None
 
 
-@router.patch("/pairs/{pair_id}/status", dependencies=[Depends(require_service_key)])
+@router.patch("/pairs/{pair_id}/status", dependencies=[Depends(require_user_or_service)])
 def update_pair_status(
     pair_id: UUID,
     body: ScorerUpdate,
@@ -338,7 +338,7 @@ def reconciliation_summary(db: Session = Depends(get_db)):
 # POST /run
 # ---------------------------------------------------------------------------
 
-@router.post("/run", dependencies=[Depends(require_service_key)])
+@router.post("/run", dependencies=[Depends(require_user_or_service)])
 @limiter.limit(EXPENSIVE_LIMIT)
 def run_reconciliation(request: Request, db: Session = Depends(get_db)):
     """

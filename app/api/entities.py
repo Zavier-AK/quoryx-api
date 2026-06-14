@@ -6,7 +6,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.auth import require_service_key, require_user
+from app.core.auth import require_service_key, require_user, require_user_or_service
 from app.models.database import get_db
 from app.models.entity import Entity
 from app.models.transaction import OAuthToken
@@ -165,7 +165,7 @@ async def sync_economic_entity_from_token(
     }
 
 
-@router.post("/sync", dependencies=[Depends(require_service_key)])
+@router.post("/sync", dependencies=[Depends(require_user_or_service)])
 async def sync_entities(db: Session = Depends(get_db)):
     """
     Sync all connected Xero organisations into the entities table.

@@ -43,24 +43,24 @@ def _valid_jwt() -> str:
 # --- Service-key endpoints ---
 
 def test_service_endpoint_rejects_anonymous():
-    assert client.post("/api/reconciliation/run").status_code == 401
+    assert client.post("/api/reconciliation/detect").status_code == 401
 
 
 def test_service_endpoint_rejects_wrong_key():
-    r = client.post("/api/reconciliation/run", headers={"X-API-Key": "wrong"})
+    r = client.post("/api/reconciliation/detect", headers={"X-API-Key": "wrong"})
     assert r.status_code == 401
 
 
 def test_service_endpoint_accepts_valid_key():
     # Passes the guard; handler may 4xx/5xx on data, but must not be 401/403.
-    r = client.post("/api/reconciliation/run", headers={"X-API-Key": SERVICE_KEY})
+    r = client.post("/api/reconciliation/detect", headers={"X-API-Key": SERVICE_KEY})
     assert r.status_code not in (401, 403)
 
 
 def test_service_endpoint_rejects_jwt():
     # JWT must not satisfy a service-key-only endpoint.
     r = client.post(
-        "/api/reconciliation/run",
+        "/api/reconciliation/detect",
         headers={"Authorization": f"Bearer {_valid_jwt()}"},
     )
     assert r.status_code == 401
@@ -121,5 +121,5 @@ def test_health_is_open():
 
 def test_auth_disabled_opens_guarded_endpoint(monkeypatch):
     monkeypatch.setattr(settings, "AUTH_ENABLED", False)
-    r = client.post("/api/reconciliation/run")
+    r = client.post("/api/reconciliation/detect")
     assert r.status_code not in (401, 403)
