@@ -9,6 +9,7 @@ alembic==1.14.0
 pydantic-settings==2.7.0
 slowapi==0.1.9
 pyjwt[crypto]==2.10.1
+cryptography==44.0.0
 
 # Dev / test
 pytest==8.3.4
