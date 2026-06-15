@@ -27,6 +27,14 @@ router = APIRouter(prefix="/economic", tags=["economic"])
 # Max page size the e-conomic REST API allows.
 ECONOMIC_PAGE_SIZE = 1000
 
+# e-conomic exposes no supplier-invoice *document* endpoint — supplier invoices
+# (AP) live in the general ledger. The Booked Entries API returns booked GL
+# entries with a `type` field (1=customer invoice, 3=supplier invoice). We read
+# type=3 and keep the creditor line of each voucher (the one with a
+# supplierNumber), whose amount is the invoice total. /paged caps pageSize at 100.
+BOOKED_ENTRIES_PATH = "bookedEntriesapi/v4.0.0/booked-entries/paged"
+BOOKED_ENTRIES_PAGE_SIZE = 100
+
 
 def _parse_economic_date(date_str: str) -> datetime:
     """
@@ -189,28 +197,54 @@ def _map_economic_invoice(item: dict, entity: Entity, token: OAuthToken) -> dict
 
 
 def _map_economic_supplier_invoice(
-    item: dict, entity: Entity, token: OAuthToken
+    entry: dict, entity: Entity, token: OAuthToken, supplier_names: dict
 ) -> dict:
-    """Map a booked SUPPLIER invoice (AP) to Transaction fields. Direction = SPEND."""
-    number = item.get("supplierInvoiceNumber") or item.get("number")
-    supplier = item.get("supplier") or {}
+    """Map a booked SUPPLIER-invoice creditor line (Booked Entries type=3) to a
+    Transaction. Direction = SPEND.
+
+    `entry` is the creditor (AP) line of a supplier-invoice voucher: its `amount`
+    is the invoice total (negative = credit to creditors), so we take the absolute
+    value. `supplier_names` maps supplierNumber -> name (best-effort).
+    """
+    number = entry.get("entryNumber")
+    supplier_no = entry.get("supplierNumber")
+    name = supplier_names.get(supplier_no) or (
+        f"Supplier {supplier_no}" if supplier_no is not None else None
+    )
     return dict(
         token_id=token.id,
         entity_id=entity.id,
         owner_id=entity.owner_id,
         external_id=f"econ-supplier-{number}",
         provider="economic",
-        amount=_to_decimal(item.get("grossAmount", item.get("amount"))),
-        currency=item.get("currency") or entity.currency,
-        description=item.get("text") or item.get("description"),
-        transaction_date=_parse_economic_date(item.get("date", "")),
-        contact_name=supplier.get("name"),
-        account_code=None,
+        amount=abs(_to_decimal(entry.get("amount"))),
+        currency=entry.get("currencyCode") or entity.currency,
+        description=entry.get("text"),
+        transaction_date=_parse_economic_date(entry.get("date", "")),
+        contact_name=name,
+        account_code=str(entry.get("accountNumber") or "") or None,
         transaction_type="SPEND",
-        reference=str(item.get("reference") or number or ""),
-        raw_payload=json.dumps(item),
+        reference=str(entry.get("voucherNumber") or number or ""),
+        raw_payload=json.dumps(entry),
         updated_at=datetime.utcnow(),
     )
+
+
+async def _fetch_supplier_names(token: OAuthToken) -> dict:
+    """Map supplierNumber -> name via the classic REST /suppliers list.
+
+    Best-effort: returns {} if the call fails, in which case supplier invoices
+    fall back to a 'Supplier <number>' label.
+    """
+    try:
+        data = await _economic_get("suppliers?pagesize=1000", token.access_token)
+    except HTTPException:
+        return {}
+    names: dict = {}
+    for s in data.get("collection") or []:
+        if s.get("supplierNumber") is not None:
+            names[s["supplierNumber"]] = s.get("name")
+    return names
 
 
 def _upsert_transaction(db: Session, fields: dict) -> str:
@@ -261,36 +295,45 @@ async def _ingest_supplier_invoices(
     entity: Entity, token: OAuthToken, db: Session
 ) -> Optional[int]:
     """
-    Page through booked supplier invoices (AP) and upsert them.
+    Ingest booked SUPPLIER invoices (AP / SPEND) via the Booked Entries API.
 
-    Supplier invoices live on the companion OpenAPI host and are not part of the
-    classic REST surface. If that endpoint is unreachable for this agreement we
-    degrade gracefully: log a warning and return None so sales-side ingest still
-    succeeds.
+    e-conomic has no supplier-invoice *document* endpoint, so we read booked GL
+    entries of type=3 (supplier invoice) and keep only the creditor line of each
+    voucher — the one carrying a `supplierNumber`, whose amount is the invoice
+    total. Expense/VAT breakdown lines (no supplierNumber) are skipped.
+
+    /paged caps pageSize at 100 and skipPages at 100 (~10k entries); large agreements
+    would need the cursor endpoint — out of scope for now. Degrades gracefully
+    (returns None) if the API is unavailable, so sales-side ingest still succeeds.
     """
+    supplier_names = await _fetch_supplier_names(token)
     total = 0
     skip = 0
     try:
         while True:
             data = await _economic_get(
-                f"supplierinvoices/booked?pagesize={ECONOMIC_PAGE_SIZE}&skippages={skip}",
+                f"{BOOKED_ENTRIES_PATH}?pageSize={BOOKED_ENTRIES_PAGE_SIZE}"
+                f"&skipPages={skip}&filter=type$eq:3",
                 token.access_token,
                 base=ECONOMIC_APP_BASE,
             )
-            collection = data.get("collection") or data.get("items") or []
-            if not collection:
+            # The /paged endpoint returns a bare JSON array of entries.
+            rows = data if isinstance(data, list) else (data.get("collection") or [])
+            if not rows:
                 break
-            for item in collection:
+            for entry in rows:
+                if entry.get("supplierNumber") is None:
+                    continue  # expense/VAT breakdown line, not the invoice total
                 _upsert_transaction(
-                    db, _map_economic_supplier_invoice(item, entity, token)
+                    db, _map_economic_supplier_invoice(entry, entity, token, supplier_names)
                 )
-            total += len(collection)
-            if len(collection) < ECONOMIC_PAGE_SIZE:
+                total += 1
+            if len(rows) < BOOKED_ENTRIES_PAGE_SIZE:
                 break
             skip += 1
     except HTTPException as exc:
         logger.warning(
-            "Supplier-invoice ingest skipped for entity=%s (endpoint unavailable): %s",
+            "Supplier-invoice ingest skipped for entity=%s (Booked Entries unavailable): %s",
             entity.org_name,
             exc.detail,
         )
