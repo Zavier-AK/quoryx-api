@@ -185,12 +185,20 @@ def economic_login(entity_name: Optional[str] = Query(None)):
 
 
 async def _connect_economic(
-    grant_token: str, db: Session, entity_name: Optional[str] = None
+    grant_token: str,
+    db: Session,
+    entity_name: Optional[str] = None,
+    owner_id: Optional[str] = None,
 ) -> dict:
     """
     Resolve an E-conomic grant token to its agreement, upsert the OAuthToken, and
     sync the entity. Shared by the redirect callback and the manual-paste endpoint.
     The grant token is permanent — no code exchange, refresh, or expiry.
+
+    owner_id is the Supabase user id (JWT `sub`) of the connecting user; it is
+    stamped onto the token and entity so tenant isolation holds downstream. The
+    redirect callback has no authenticated user, so it passes None (the manual
+    /connect endpoint, which is what the dashboard uses, always supplies it).
     """
     # Imports here to avoid a circular import at module load.
     from app.api.economic import fetch_economic_self  # noqa: PLC0415
@@ -221,12 +229,15 @@ async def _connect_economic(
         existing.access_token = grant_token
         existing.refresh_token = None
         existing.expires_at = None
+        if owner_id:
+            existing.owner_id = owner_id
         db.commit()
         db.refresh(existing)
         oauth_token = existing
     else:
         oauth_token = OAuthToken(
             user_id=tenant_id,
+            owner_id=owner_id,
             provider="economic",
             access_token=grant_token,
             refresh_token=None,
@@ -279,15 +290,22 @@ class EconomicConnectRequest(BaseModel):
     entity_name: Optional[str] = None
 
 
-@router.post("/economic/connect", dependencies=[Depends(require_user)])
+@router.post("/economic/connect")
 async def economic_connect(
-    body: EconomicConnectRequest, db: Session = Depends(get_db)
+    body: EconomicConnectRequest,
+    db: Session = Depends(get_db),
+    claims: dict = Depends(require_user),
 ):
     """
     Manual connect: the customer pastes their E-conomic agreement grant token
     (the "Connect agreement token" popup). Verifies it via /self and saves it.
+
+    The connection (and everything ingested from it) is owned by the authenticated
+    Supabase user — claims["sub"] — so it stays isolated to them.
     """
     token = body.token.strip()
     if not token:
         raise HTTPException(status_code=400, detail="Agreement token is required")
-    return await _connect_economic(token, db, body.entity_name)
+    return await _connect_economic(
+        token, db, body.entity_name, owner_id=claims.get("sub")
+    )

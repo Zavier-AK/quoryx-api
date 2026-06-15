@@ -20,6 +20,9 @@ class OAuthToken(Base):
 
     id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(String(255), nullable=False, default="default_user")
+    # Supabase user id (JWT `sub`) that owns this connection — root of ownership;
+    # entities/transactions stamped from here.
+    owner_id = Column(String(255), nullable=True, index=True)
     provider = Column(String(50), nullable=False)  # "xero" or "quickbooks"
     access_token = Column(EncryptedString, nullable=False)
     refresh_token = Column(EncryptedString, nullable=True)
@@ -35,6 +38,8 @@ class Transaction(Base):
     __tablename__ = "transactions"
 
     id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Owner (Supabase `sub`), inherited from the entity/token this row belongs to.
+    owner_id = Column(String(255), nullable=True, index=True)
     token_id = Column(Uuid(as_uuid=True), ForeignKey("oauth_tokens.id"), nullable=False)
     entity_id = Column(Uuid(as_uuid=True), ForeignKey("entities.id"), nullable=True)
     external_id = Column(String(255), nullable=False)  # Xero BankTransactionID

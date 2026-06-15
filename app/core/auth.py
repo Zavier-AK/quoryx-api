@@ -76,6 +76,16 @@ def require_user(authorization: Optional[str] = Header(None)) -> dict:
     return claims
 
 
+def current_owner_id(claims: dict) -> Optional[str]:
+    """The caller's owner id (Supabase `sub`), or None when auth is disabled.
+
+    Use this to scope a user's reads to their own rows. Returns None when
+    AUTH_ENABLED is off (claims == {}), in which case callers should NOT filter —
+    dev/integration runs see everything, matching pre-isolation behaviour.
+    """
+    return claims.get("sub") if claims else None
+
+
 def require_user_or_service(
     x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
     authorization: Optional[str] = Header(None),

@@ -19,6 +19,8 @@ class Entity(Base):
     __tablename__ = "entities"
 
     id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Supabase user id (JWT `sub`) that owns this entity — the tenant-isolation key.
+    owner_id = Column(String(255), nullable=True, index=True)
     tenant_id = Column(String(255), nullable=False, unique=True)
     org_name = Column(String(255), nullable=False)
     currency = Column(String(3), nullable=False)
@@ -41,6 +43,9 @@ class IntercompanyTransaction(Base):
     __tablename__ = "intercompany_transactions"
 
     id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Owner (Supabase `sub`) — both sides of a pair share one owner; matching never
+    # crosses owners.
+    owner_id = Column(String(255), nullable=True, index=True)
     source_entity_id = Column(
         Uuid(as_uuid=True), ForeignKey("entities.id"), nullable=False
     )
