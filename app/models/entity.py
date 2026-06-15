@@ -2,7 +2,7 @@ from datetime import datetime
 import uuid
 import enum
 
-from sqlalchemy import Boolean, Column, DateTime, Enum, Float, ForeignKey, Integer, Numeric, String, Text, Uuid
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, Numeric, String, Text, Uuid
 from sqlalchemy.orm import relationship
 
 from app.models.database import Base
@@ -56,10 +56,14 @@ class IntercompanyTransaction(Base):
     currency = Column(String(3), nullable=False)
     description = Column(String(500), nullable=True)
     transaction_date = Column(DateTime, nullable=False)
+    # Stored as a plain varchar of the lowercase status value ("unmatched",
+    # "matched", "reconciled", "review_required"). NOT a SQLAlchemy Enum: the DB
+    # column is varchar, and an Enum() here maps by UPPERCASE member name, so
+    # reading the lowercase values raised LookupError and 500'd every read.
     status = Column(
-        Enum(IntercompanyStatus),
+        String(20),
         nullable=False,
-        default=IntercompanyStatus.UNMATCHED,
+        default=IntercompanyStatus.UNMATCHED.value,
     )
     source_transaction_id = Column(String(255), nullable=True)
     target_transaction_id = Column(String(255), nullable=True)
