@@ -172,6 +172,7 @@ def _map_economic_invoice(item: dict, entity: Entity, token: OAuthToken) -> dict
     return dict(
         token_id=token.id,
         entity_id=entity.id,
+        owner_id=entity.owner_id,
         external_id=f"econ-sales-{number}",
         provider="economic",
         amount=_to_decimal(item.get("grossAmount")),
@@ -196,6 +197,7 @@ def _map_economic_supplier_invoice(
     return dict(
         token_id=token.id,
         entity_id=entity.id,
+        owner_id=entity.owner_id,
         external_id=f"econ-supplier-{number}",
         provider="economic",
         amount=_to_decimal(item.get("grossAmount", item.get("amount"))),

@@ -6,7 +6,12 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.auth import require_service_key, require_user, require_user_or_service
+from app.core.auth import (
+    current_owner_id,
+    require_service_key,
+    require_user,
+    require_user_or_service,
+)
 from app.models.database import get_db
 from app.models.entity import Entity
 from app.models.transaction import OAuthToken
@@ -72,11 +77,14 @@ async def sync_entity_from_token(token: OAuthToken, db: Session) -> dict:
         entity.org_name = org_name
         entity.currency = currency
         entity.country_code = country_code
+        if token.owner_id:
+            entity.owner_id = token.owner_id
         db.commit()
         db.refresh(entity)
         action = "updated"
     else:
         entity = Entity(
+            owner_id=token.owner_id,
             tenant_id=token.tenant_id,
             org_name=org_name,
             currency=currency,
@@ -131,11 +139,14 @@ async def sync_economic_entity_from_token(
         entity.org_name = org_name
         entity.currency = currency
         entity.country_code = country
+        if token.owner_id:
+            entity.owner_id = token.owner_id
         db.commit()
         db.refresh(entity)
         action = "updated"
     else:
         entity = Entity(
+            owner_id=token.owner_id,
             tenant_id=token.tenant_id,
             org_name=org_name,
             currency=currency,
@@ -193,10 +204,17 @@ async def sync_entities(db: Session = Depends(get_db)):
     return results[0] if len(results) == 1 else results
 
 
-@router.get("/", dependencies=[Depends(require_user)])
-def list_entities(db: Session = Depends(get_db)):
-    """List all connected Xero organisations."""
-    entities = db.query(Entity).order_by(Entity.connected_at.desc()).all()
+@router.get("/")
+def list_entities(
+    db: Session = Depends(get_db),
+    claims: dict = Depends(require_user),
+):
+    """List the connected organisations owned by the authenticated user."""
+    query = db.query(Entity)
+    owner = current_owner_id(claims)
+    if owner:
+        query = query.filter(Entity.owner_id == owner)
+    entities = query.order_by(Entity.connected_at.desc()).all()
     return [
         {
             "id": str(e.id),

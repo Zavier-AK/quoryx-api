@@ -8,7 +8,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.core.auth import require_service_key, require_user, require_user_or_service
+from app.core.auth import (
+    current_owner_id,
+    require_service_key,
+    require_user,
+    require_user_or_service,
+)
 from app.core.ratelimit import EXPENSIVE_LIMIT, limiter
 from app.models.database import get_db
 from app.models.entity import Entity, IntercompanyTransaction
@@ -64,6 +69,10 @@ def detect_intercompany(db: Session = Depends(get_db)):
             return
         if spend.external_id in consumed or receive.external_id in consumed:
             return
+        # Tenant isolation: never pair transactions owned by different users.
+        # (Legacy/dev rows have owner_id=None on both sides → treated as same owner.)
+        if spend.owner_id != receive.owner_id:
+            return
 
         existing = (
             db.query(IntercompanyTransaction)
@@ -81,6 +90,7 @@ def detect_intercompany(db: Session = Depends(get_db)):
 
         db.add(
             IntercompanyTransaction(
+                owner_id=spend.owner_id,
                 source_entity_id=spend.entity_id,
                 target_entity_id=receive.entity_id,
                 amount=spend.amount,
@@ -214,16 +224,20 @@ def _pair_to_dict(pair: IntercompanyTransaction, db: Session) -> dict:
     }
 
 
-@router.get("/pairs", dependencies=[Depends(require_user)])
+@router.get("/pairs")
 def list_pairs(
     status: str = None,
     db: Session = Depends(get_db),
+    claims: dict = Depends(require_user),
 ):
     """
-    Return all intercompany transaction pairs with entity names, amounts and status.
-    Optionally filter by ?status=unmatched|matched|reconciled.
+    Return the authenticated user's intercompany pairs with entity names, amounts
+    and status. Optionally filter by ?status=unmatched|matched|reconciled.
     """
     query = db.query(IntercompanyTransaction)
+    owner = current_owner_id(claims)
+    if owner:
+        query = query.filter(IntercompanyTransaction.owner_id == owner)
     if status:
         query = query.filter(IntercompanyTransaction.status == status)
     pairs = query.order_by(IntercompanyTransaction.created_at.desc()).all()
@@ -290,14 +304,24 @@ def update_pair_status(
 # GET /summary
 # ---------------------------------------------------------------------------
 
-@router.get("/summary", dependencies=[Depends(require_user)])
-def reconciliation_summary(db: Session = Depends(get_db)):
+@router.get("/summary")
+def reconciliation_summary(
+    db: Session = Depends(get_db),
+    claims: dict = Depends(require_user),
+):
     """
-    Return reconciliation counts broken down by status (global) and per entity.
+    Return reconciliation counts broken down by status (global) and per entity,
+    scoped to the authenticated user's data.
     Each entity row counts pairs where it appears as source OR target.
     """
-    all_pairs = db.query(IntercompanyTransaction).all()
-    all_entities = {e.id: e for e in db.query(Entity).all()}
+    owner = current_owner_id(claims)
+    pairs_query = db.query(IntercompanyTransaction)
+    entities_query = db.query(Entity)
+    if owner:
+        pairs_query = pairs_query.filter(IntercompanyTransaction.owner_id == owner)
+        entities_query = entities_query.filter(Entity.owner_id == owner)
+    all_pairs = pairs_query.all()
+    all_entities = {e.id: e for e in entities_query.all()}
 
     statuses = ("unmatched", "matched", "reconciled")
 
