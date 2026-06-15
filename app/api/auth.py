@@ -275,14 +275,34 @@ async def _connect_economic(
 @router.get("/economic/callback")
 async def economic_callback(
     token: str = Query(...),
-    state: str = Query(...),
+    state: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ):
-    """Redirect callback: validate state (CSRF), then connect the agreement."""
-    state_data = _pending_states.pop(state, None)
-    if not state_data or state_data.get("provider") != "economic":
-        raise HTTPException(status_code=400, detail="Invalid or expired state token")
-    return await _connect_economic(token, db, state_data.get("entity_name"))
+    """
+    Redirect callback from e-conomic's install flow.
+
+    e-conomic appends ?token=<grant> to our redirectUrl. When the flow is started
+    from our own /economic/login we also round-trip a `state` token (CSRF + the
+    entity label); but when a customer installs straight from e-conomic's app list
+    there is no state to return, so it is optional here. If a state IS present it
+    must be valid.
+
+    This path has no authenticated dashboard user, so owner_id is not stamped here
+    (the entity is claimed to an owner via the dashboard connect, or backfilled).
+    """
+    entity_name = None
+    if state is not None:
+        state_data = _pending_states.pop(state, None)
+        if not state_data or state_data.get("provider") != "economic":
+            raise HTTPException(
+                status_code=400, detail="Invalid or expired state token"
+            )
+        entity_name = state_data.get("entity_name")
+    else:
+        logger.info(
+            "E-conomic callback without state (installed from the e-conomic app list)"
+        )
+    return await _connect_economic(token, db, entity_name)
 
 
 class EconomicConnectRequest(BaseModel):
