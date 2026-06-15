@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.auth import require_user
+from app.core.config import settings
 from app.models.database import get_db
 from app.models.transaction import OAuthToken
 from app.services.oauth_service import oauth_service
@@ -289,20 +290,31 @@ async def economic_callback(
 
     This path has no authenticated dashboard user, so owner_id is not stamped here
     (the entity is claimed to an owner via the dashboard connect, or backfilled).
+
+    On success the browser is redirected back into the dashboard (rather than left
+    on a raw-JSON page); failures redirect with an ?error= flag.
     """
     entity_name = None
     if state is not None:
         state_data = _pending_states.pop(state, None)
         if not state_data or state_data.get("provider") != "economic":
-            raise HTTPException(
-                status_code=400, detail="Invalid or expired state token"
+            return RedirectResponse(
+                url=f"{settings.FRONTEND_BASE_URL}/entities?error=invalid_state"
             )
         entity_name = state_data.get("entity_name")
     else:
         logger.info(
             "E-conomic callback without state (installed from the e-conomic app list)"
         )
-    return await _connect_economic(token, db, entity_name)
+
+    try:
+        await _connect_economic(token, db, entity_name)
+    except HTTPException as exc:
+        logger.warning("E-conomic connect failed in callback: %s", exc.detail)
+        return RedirectResponse(
+            url=f"{settings.FRONTEND_BASE_URL}/entities?error=connect_failed"
+        )
+    return RedirectResponse(url=f"{settings.FRONTEND_BASE_URL}/entities?connected=economic")
 
 
 class EconomicConnectRequest(BaseModel):

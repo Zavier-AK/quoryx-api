@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     # encryption no-ops and legacy plaintext tokens pass through unchanged.
     TOKEN_ENCRYPTION_KEY: str = ""
 
+    # Where OAuth/connect redirect callbacks send the browser after finishing, so
+    # the user lands back in the dashboard instead of on a raw-JSON page.
+    FRONTEND_BASE_URL: str = "https://carbon-copy-cat.lovable.app"
+
     # Used by the TypeScript engine / integration scripts, but declared here so a
     # shared .env containing them does not break the Python app on local boot.
     SUPABASE_URL: str = ""
