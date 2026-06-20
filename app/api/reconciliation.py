@@ -1,3 +1,4 @@
+import json
 import logging
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -18,6 +19,7 @@ from app.core.ratelimit import EXPENSIVE_LIMIT, limiter
 from app.models.database import get_db
 from app.models.entity import Entity, IntercompanyTransaction
 from app.models.transaction import Transaction
+from app.services.scorer import score_pair
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +56,10 @@ def detect_intercompany(db: Session = Depends(get_db)):
         .all()
     )
 
+    # Build an entity_id -> org_name map once so per-pair counterparty scoring
+    # doesn't issue N queries.
+    entity_names = {e.id: e.org_name for e in db.query(Entity).all()}
+
     pairs_created = 0
     pairs_skipped = 0
     pairs = []
@@ -83,8 +89,42 @@ def detect_intercompany(db: Session = Depends(get_db)):
             .first()
         )
         seen_keys.add(key)
+
+        # Inline scoring (Python port of matching/scorer.ts). spend == SPEND/bill,
+        # receive == RECEIVE/invoice. Counterparty scoring compares each side's
+        # contact_name against the OTHER side's entity name.
+        score = score_pair(
+            spend,
+            receive,
+            entity_names.get(spend.entity_id),
+            entity_names.get(receive.entity_id),
+        )
+        confidence = score["confidence_score"]
+        # Status mapping per CLAUDE.md confidence tiers:
+        #   >= 0.85            -> matched
+        #   0.45 <= c < 0.85   -> review_required (review_required=True)
+        #   < 0.45             -> unmatched
+        if confidence >= 0.85:
+            pair_status = "matched"
+            review_required = False
+        elif confidence >= 0.45:
+            pair_status = "review_required"
+            review_required = True
+        else:
+            pair_status = "unmatched"
+            review_required = False
+
         if existing:
             pairs_skipped += 1
+            # Refresh scorer results on the existing row so re-runs surface scores.
+            existing.confidence_score = confidence
+            existing.match_type = score["match_type"]
+            existing.amount_difference = score["amount_difference"]
+            existing.days_difference = score["days_difference"]
+            existing.match_reasons = json.dumps(score["match_reasons"])
+            existing.review_required = review_required
+            existing.status = pair_status
+            existing.updated_at = datetime.utcnow()
             consumed.update({spend.external_id, receive.external_id})
             return
 
@@ -97,9 +137,15 @@ def detect_intercompany(db: Session = Depends(get_db)):
                 currency=spend.currency,
                 description=spend.description or receive.description,
                 transaction_date=spend.transaction_date,
-                status="unmatched",
+                status=pair_status,
                 source_transaction_id=spend.external_id,
                 target_transaction_id=receive.external_id,
+                confidence_score=confidence,
+                match_type=score["match_type"],
+                amount_difference=score["amount_difference"],
+                days_difference=score["days_difference"],
+                match_reasons=json.dumps(score["match_reasons"]),
+                review_required=review_required,
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow(),
             )
