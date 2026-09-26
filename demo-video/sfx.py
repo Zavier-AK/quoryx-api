@@ -129,20 +129,95 @@ def riser(dur=0.9):
     return (noise + tone) * shape * np.linspace(1, 1, n)
 
 
-def pad(duration):
-    """Airy, slowly breathing bed: high Gmaj7 voicing (no bass, so no hum) plus a
-    whisper of filtered air. Each note swells on its own slow cycle so the bed moves."""
-    t = t_axis(duration)
-    n = len(t)
-    notes = [392.0, 493.88, 587.33, 739.99]
-    out = np.zeros(n)
-    for k, f in enumerate(notes):
-        swell = 0.55 + 0.45 * np.sin(2 * np.pi * (0.09 + 0.04 * k) * t + k * 1.7)
-        out += np.sin(2 * np.pi * f * t + k) * swell * 0.25
-    out = lowpass(out, 2500)
-    air = band(rng.standard_normal(n), 2500, 7000) * (0.5 + 0.5 * np.sin(2 * np.pi * 0.12 * t)) * 0.08
-    fade = np.clip(t / 2.0, 0, 1) * np.clip((duration - t) / 1.2, 0, 1)
-    return (out + air) * fade * 0.018
+def midi(m):
+    return 440.0 * 2 ** ((m - 69) / 12)
+
+
+def marimba(f, dur=0.35, gain=1.0):
+    t = t_axis(dur)
+    tone = np.sin(2 * np.pi * f * t) + 0.25 * np.sin(2 * np.pi * 4 * f * t) * np.exp(-t / 0.03)
+    return tone * env(len(t), 0.002, 0.12) * gain
+
+
+def glock(f, dur=0.6, gain=1.0):
+    t = t_axis(dur)
+    tone = np.sin(2 * np.pi * f * t) + 0.3 * np.sin(2 * np.pi * 2.76 * f * t) * np.exp(-t / 0.08)
+    return tone * env(len(t), 0.001, 0.22) * gain
+
+
+def bass(f, dur=0.3):
+    t = t_axis(dur)
+    tone = np.sin(2 * np.pi * f * t) + 0.3 * np.sin(2 * np.pi * 2 * f * t)
+    return lowpass(tone * env(len(t), 0.004, 0.14), 600) * 0.9
+
+
+def kick():
+    return sweep(130, 45, 0.18, 0.4) * env(int(0.18 * SR), 0.001, 0.07) * 0.9
+
+
+def clap():
+    n = int(0.12 * SR)
+    return band(rng.standard_normal(n), 1200, 5000) * env(n, 0.001, 0.03) * 0.5
+
+
+def hat(open_=False):
+    n = int((0.09 if open_ else 0.04) * SR)
+    return band(rng.standard_normal(n), 7000, 14000) * env(n, 0.0005, 0.03 if open_ else 0.008) * 0.3
+
+
+# Upbeat I–V–vi–IV groove in C major at 120 BPM (one bar = 2 s).
+CHORDS = {"C": [60, 64, 67, 72], "G": [59, 62, 67, 71], "Am": [57, 60, 64, 69], "F": [57, 60, 65, 69]}
+ROOTS = {"C": 36, "G": 43, "Am": 45, "F": 41}
+BARS = ["C", "G", "Am", "F", "C", "G", "F"]
+MELODY = {4: [(0, 76), (1, 79), (2, 84), (4, 79), (6, 76)],
+          5: [(0, 74), (1, 79), (2, 83), (4, 86), (6, 83)],
+          6: [(0, 84), (1, 81), (2, 77), (4, 79), (5, 83), (6, 86)]}
+
+
+def music(duration, final_hit):
+    """Light, happy 'finance explainer' groove: marimba chords, plucked bass, soft
+    drums and a glockenspiel hook. Everything is short and percussive (no sustained
+    tones), and the last chord lands exactly on `final_hit` (the logo chime)."""
+    beat = 0.5
+    start = final_hit - len(BARS) * 4 * beat
+    out = np.zeros((int(duration * SR) + SR, 2))
+    e = beat / 2  # eighth note
+
+    for b, name in enumerate(BARS):
+        t0 = start + b * 4 * beat
+        build = b == len(BARS) - 1
+        chord = CHORDS[name]
+        # marimba chord stabs on a syncopated eighth pattern
+        for pos in [0, 2, 3, 5, 6]:
+            c = CHORDS["G"] if build and pos >= 4 else chord
+            for k, m in enumerate(c):
+                place(out, marimba(midi(m), gain=0.07 * (1.2 if pos == 0 else 1)), t0 + pos * e, -0.3 + 0.2 * k)
+        if b >= 1:
+            root = ROOTS["G"] if build else ROOTS[name]
+            for pos, off in [(0, 0), (3, 0), (4, 12), (6, 0)]:
+                if build and pos >= 4:
+                    root = ROOTS["G"]
+                place(out, bass(midi(root + 12 + off)) * 0.22, t0 + pos * e)
+            for pos in [0, 4]:
+                place(out, kick() * 0.28, t0 + pos * e)
+            for pos in [2, 6]:
+                place(out, clap() * 0.16, t0 + pos * e, 0.1)
+        for pos in range(8):
+            if b >= 1 or pos % 2:
+                place(out, hat(open_=pos % 2 == 1) * (0.12 if pos % 2 else 0.07), t0 + pos * e, 0.35)
+        if build:  # snare-roll lift into the logo
+            for i in range(8):
+                place(out, clap() * (0.05 + 0.02 * i), t0 + 4 * beat * 0.5 + i * e / 2, -0.1)
+        for pos, m in MELODY.get(b, []):
+            place(out, glock(midi(m), gain=0.08), t0 + pos * e, 0.2)
+
+    # final chord on the logo
+    for k, m in enumerate(CHORDS["C"] + [76, 79]):
+        place(out, marimba(midi(m), 1.2, 0.08), final_hit, -0.3 + 0.12 * k)
+    place(out, bass(midi(48), 0.8) * 0.3, final_hit)
+    place(out, kick() * 0.3, final_hit)
+    fade_in = np.clip(np.arange(out.shape[0]) / SR / 0.6, 0, 1)
+    return out * fade_in[:, None]
 
 
 # ---------- mix ----------
@@ -164,8 +239,8 @@ def main(cue_path, out_path):
     data = json.load(open(cue_path))
     duration = data["duration"]
     mix = np.zeros((int(duration * SR) + SR, 2))
-    bed = pad(duration)
-    place(mix, bed, 0)
+    chime_t = next(c["t"] for c in data["cues"] if c["type"] == "chime")
+    mix += 0.4 * music(duration, chime_t)[: mix.shape[0]]  # sits under the SFX
 
     pluck_notes = [659.25, 783.99, 880.0, 1046.5]
     for c in data["cues"]:
