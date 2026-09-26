@@ -44,12 +44,12 @@ def sweep(f0, f1, dur, curve=1.0):
 def key(space=False):
     n = int(0.045 * SR)
     noise = rng.standard_normal(n)
-    lo, hi = (900, 2600) if space else (2200, 6500)
+    lo, hi = (800, 2200) if space else (1800, 4800)
     lo *= rng.uniform(0.85, 1.15)
     hi *= rng.uniform(0.85, 1.15)
     click = band(noise, lo, hi) * env(n, 0.0005, 0.006)
-    thump = np.sin(2 * np.pi * rng.uniform(150, 210) * t_axis(0.045)) * env(n, 0.001, 0.012) * 0.6
-    return (click * 0.9 + thump) * rng.uniform(0.09, 0.14) * (1.3 if space else 1)
+    thump = np.sin(2 * np.pi * rng.uniform(150, 210) * t_axis(0.045)) * env(n, 0.001, 0.01) * 0.4
+    return (click * 0.8 + thump) * rng.uniform(0.04, 0.065) * (1.2 if space else 1)
 
 
 def pop(f0=420, f1=900, dur=0.09, gain=0.35):
@@ -130,17 +130,19 @@ def riser(dur=0.9):
 
 
 def pad(duration):
-    """Soft Cmaj9 bed that sits under everything."""
+    """Airy, slowly breathing bed: high Gmaj7 voicing (no bass, so no hum) plus a
+    whisper of filtered air. Each note swells on its own slow cycle so the bed moves."""
     t = t_axis(duration)
     n = len(t)
-    notes = [130.81, 196.0, 246.94, 293.66, 329.63]
+    notes = [392.0, 493.88, 587.33, 739.99]
     out = np.zeros(n)
     for k, f in enumerate(notes):
-        lfo = 1 + 0.004 * np.sin(2 * np.pi * (0.15 + 0.05 * k) * t)
-        out += np.sin(2 * np.pi * np.cumsum(f * lfo) / SR) * (0.5 if k == 0 else 0.28)
-    out = lowpass(out, 1400)
-    fade = np.clip(t / 1.5, 0, 1) * np.clip((duration - t) / 1.2, 0, 1)
-    return out * fade * 0.035
+        swell = 0.55 + 0.45 * np.sin(2 * np.pi * (0.09 + 0.04 * k) * t + k * 1.7)
+        out += np.sin(2 * np.pi * f * t + k) * swell * 0.25
+    out = lowpass(out, 2500)
+    air = band(rng.standard_normal(n), 2500, 7000) * (0.5 + 0.5 * np.sin(2 * np.pi * 0.12 * t)) * 0.08
+    fade = np.clip(t / 2.0, 0, 1) * np.clip((duration - t) / 1.2, 0, 1)
+    return (out + air) * fade * 0.018
 
 
 # ---------- mix ----------
@@ -199,7 +201,6 @@ def main(cue_path, out_path):
             place(mix, riser(0.9), t)
         elif kind == "chime":
             place(mix, bell([523.25, 659.25, 783.99, 1046.5], 3.0, 0.2, 1.1), t)
-            place(mix, sweep(65, 60, 1.5) * env(int(1.5 * SR), 0.01, 0.5) * 0.18, t)
 
     mix = mix[: int(duration * SR)]
     # gentle bus compression + soft clip, then normalise to -1 dBFS
