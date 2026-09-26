@@ -1,0 +1,474 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Quoryx MCP demo</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: #F6F6F3; }
+  body { font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; }
+  #stage { position: absolute; inset: 0; overflow: hidden; background: #F6F6F3; }
+  #dots { position: absolute; inset: -40px; background-image: radial-gradient(#D6D6CF 1.3px, transparent 1.6px); background-size: 30px 30px; }
+  #glow { position: absolute; inset: 0; background: radial-gradient(ellipse 60% 55% at 50% 45%, rgba(255,255,255,0.95), rgba(246,246,243,0) 70%); }
+
+  /* ---------- chat windows ---------- */
+  .win { position: absolute; left: 200px; top: 90px; width: 1520px; height: 900px; border-radius: 22px; overflow: hidden;
+         box-shadow: 0 40px 90px -30px rgba(30,30,20,0.28), 0 0 0 1px rgba(0,0,0,0.06); will-change: transform, filter; }
+  .top { position: absolute; left: 0; right: 0; top: 0; height: 64px; display: flex; align-items: center; gap: 18px; padding: 0 26px; }
+  .dots3 { display: flex; gap: 8px; }
+  .dots3 i { width: 12px; height: 12px; border-radius: 50%; background: #DAD7CE; display: block; }
+  .greet { position: absolute; left: 0; right: 0; top: 200px; text-align: center; }
+  .msgs { position: absolute; top: 72px; left: 50%; width: 840px; margin-left: -420px; bottom: 168px; overflow: hidden;
+          -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 36px, #000 calc(100% - 10px), transparent 100%); }
+  .scroll { position: absolute; left: 10px; right: 10px; top: 24px; display: flex; flex-direction: column; gap: 20px; }
+  .ubub { align-self: flex-end; max-width: 600px; padding: 14px 20px; border-radius: 20px; font-size: 19px; line-height: 1.45; }
+  .atext { font-size: 20px; line-height: 1.5; min-height: 30px; }
+  .composer { position: absolute; left: 50%; width: 800px; margin-left: -400px; height: 132px; border-radius: 22px; background: #fff; }
+  .field { position: absolute; left: 24px; right: 24px; top: 22px; font-size: 20px; line-height: 30px; white-space: nowrap; }
+  .ph { position: absolute; left: 4px; top: 0; }
+  .caret { display: inline-block; width: 2px; height: 26px; vertical-align: -5px; margin-left: 1px; }
+  .crow { position: absolute; left: 18px; right: 16px; bottom: 16px; height: 40px; display: flex; align-items: center; gap: 10px; }
+  .plus { width: 36px; height: 36px; border-radius: 10px; border: 1px solid; display: grid; place-items: center; font-size: 22px; font-weight: 300; }
+  .conn { height: 34px; padding: 0 14px 0 10px; border-radius: 17px; display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 500;
+          font-family: 'Montserrat'; }
+  .conn img { width: 20px; height: 20px; }
+  .conn .led { width: 8px; height: 8px; border-radius: 50%; background: #10A37F; box-shadow: 0 0 0 3px rgba(16,163,127,0.18); }
+  .grow { flex: 1; }
+  .model { font-size: 15px; }
+  .send { width: 40px; height: 40px; display: grid; place-items: center; }
+  .send svg { width: 20px; height: 20px; }
+
+  /* tool call */
+  .tool { border-radius: 16px; padding: 16px 20px 12px; }
+  .th { display: flex; align-items: center; gap: 10px; font-size: 16px; }
+  .th img { width: 24px; height: 24px; }
+  .th b { font-family: 'Montserrat'; font-weight: 700; font-size: 16px; }
+  .th code { font-family: ui-monospace, 'DejaVu Sans Mono', monospace; font-size: 14px; padding: 3px 8px; border-radius: 6px; }
+  .status { margin-left: auto; position: relative; font-size: 14px; font-weight: 600; font-family: 'Montserrat'; height: 20px; width: 110px; text-align: right; }
+  .status span { position: absolute; right: 0; top: 0; white-space: nowrap; }
+  .run { background: linear-gradient(90deg, #9CA3AF 0%, #9CA3AF 35%, #1F2937 50%, #9CA3AF 65%, #9CA3AF 100%); background-size: 300% 100%;
+         -webkit-background-clip: text; color: transparent; }
+  .done { color: #0E9F6E; }
+  .steps { margin-top: 10px; display: flex; flex-direction: column; overflow: hidden; }
+  .step { display: flex; align-items: center; gap: 12px; height: 38px; font-size: 16.5px; }
+  .ic { width: 22px; height: 22px; position: relative; }
+  .ic svg { position: absolute; inset: 0; width: 22px; height: 22px; }
+  .meta { margin-left: auto; font-size: 14.5px; color: #8A8A85; font-variant-numeric: tabular-nums; }
+
+  /* Quoryx report card (same in every client) */
+  .rep { background: #fff; border-radius: 18px; padding: 22px 24px 18px; font-family: 'Montserrat'; color: #111827;
+         box-shadow: 0 1px 0 rgba(0,0,0,0.04), 0 18px 40px -22px rgba(20,40,30,0.25); border: 1px solid #ECEBE6; }
+  .rh { display: flex; align-items: center; gap: 12px; }
+  .rh img { width: 32px; height: 32px; }
+  .rh .t1 { font-weight: 700; font-size: 18px; }
+  .rh .t2 { font-weight: 500; font-size: 13.5px; color: #6B7280; margin-top: 2px; }
+  .pill { margin-left: auto; font-size: 12px; font-weight: 700; letter-spacing: 0.1em; color: #0E9F6E; background: #E7F6EF;
+          border: 1px solid #CDEBDD; padding: 6px 14px; border-radius: 999px; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 18px 0 14px; }
+  .stat { background: #F8F8F5; border-radius: 12px; padding: 12px 16px; }
+  .stat .k { font-size: 11.5px; font-weight: 700; letter-spacing: 0.14em; color: #6B7280; }
+  .stat .v { font-size: 34px; font-weight: 800; letter-spacing: -0.02em; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .stat .v small { font-size: 18px; font-weight: 600; color: #6B7280; margin-left: 4px; letter-spacing: 0; }
+  .rows { background: #F8FAF9; border-radius: 12px; padding: 2px 14px; }
+  .row { display: flex; align-items: center; gap: 14px; height: 48px; border-bottom: 1px solid #EEF0EE; }
+  .row:last-child { border-bottom: 0; }
+  .row .doc { width: 30px; height: 30px; border-radius: 50%; background: #EEF1F3; display: grid; place-items: center; }
+  .row .doc svg { width: 15px; height: 15px; }
+  .row .id { font-weight: 700; font-size: 15px; width: 150px; }
+  .row .co { font-family: 'Source Serif 4', serif; font-size: 14.5px; color: #6B7280; flex: 1; }
+  .row .amt { font-weight: 700; font-size: 15.5px; font-variant-numeric: tabular-nums; }
+  .row .m { font-size: 11px; font-weight: 700; letter-spacing: 0.12em; color: #0E9F6E; background: #E7F6EF; border: 1px solid #CDEBDD;
+            padding: 5px 12px; border-radius: 999px; margin-left: 18px; }
+  .rf { display: flex; align-items: center; gap: 10px; margin-top: 14px; font-size: 14.5px; font-weight: 600; color: #374151; }
+  .rf svg { width: 18px; height: 18px; }
+  .rf .dl { margin-left: auto; color: #0E9F6E; font-weight: 700; }
+
+  /* Claude-style skin */
+  .claude { background: #FAF9F5; color: #3D3929; }
+  .claude .brand { font-family: 'Source Serif 4', serif; font-size: 23px; font-weight: 500; }
+  .claude .greet { font-family: 'Source Serif 4', serif; font-size: 50px; font-weight: 400; color: #3D3929; letter-spacing: -0.01em; }
+  .claude .ubub { background: #F0EEE6; }
+  .claude .atext { font-family: 'Source Serif 4', serif; font-size: 21px; }
+  .claude .composer { border: 1px solid #E5E2D8; box-shadow: 0 8px 30px -12px rgba(60,50,20,0.18); }
+  .claude .ph, .claude .model { color: #9C9888; }
+  .claude .caret { background: #C96442; }
+  .claude .plus { border-color: #E5E2D8; color: #6E6A5E; }
+  .claude .conn { background: #F4F2EC; color: #3D3929; }
+  .claude .send { border-radius: 10px; }
+  .claude .tool { background: #fff; border: 1px solid #E8E5DC; }
+  .claude .th code { background: #F4F2EC; color: #6E6A5E; }
+
+  /* ChatGPT-style skin */
+  .gpt { background: #FFFFFF; color: #0D0D0D; }
+  .gpt .brand { font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .gpt .brand svg { width: 16px; height: 16px; color: #8F8F8F; }
+  .gpt .dots3 i { background: #E3E3E3; }
+  .gpt .greet { font-size: 34px; font-weight: 600; letter-spacing: -0.01em; }
+  .gpt .ubub { background: #F4F4F4; border-radius: 24px; }
+  .gpt .composer { border-radius: 30px; border: 1px solid #E5E5E5; box-shadow: 0 6px 24px -10px rgba(0,0,0,0.14); }
+  .gpt .ph, .gpt .model { color: #8F8F8F; }
+  .gpt .caret { background: #0D0D0D; }
+  .gpt .plus { border-radius: 50%; border-color: #E5E5E5; color: #5D5D5D; }
+  .gpt .conn { background: #F4F4F4; color: #0D0D0D; }
+  .gpt .send { border-radius: 50%; }
+  .gpt .tool { background: #F9F9F9; border: 1px solid #EFEFEF; }
+  .gpt .th code { background: #EFEFEF; color: #5D5D5D; }
+
+  /* ---------- network scene ---------- */
+  #net { position: absolute; inset: 0; width: 1920px; height: 1080px; overflow: visible; }
+  .tile { position: absolute; width: 304px; height: 180px; border-radius: 12px; overflow: hidden; }
+  #t3 { left: 984px; top: 510px; background: #17181C; box-shadow: 0 20px 40px -20px rgba(0,0,0,0.4); padding: 14px; }
+  #t3 .bar { display: flex; gap: 5px; margin-bottom: 14px; }
+  #t3 .bar i { width: 7px; height: 7px; border-radius: 50%; background: #3A3B42; display: block; }
+  #t3 .ln { height: 7px; border-radius: 4px; margin: 0 0 9px; }
+  #t3 .chip { position: absolute; right: 12px; bottom: 12px; display: flex; align-items: center; gap: 6px; background: #24262D; color: #E5E7EB;
+              font-family: 'Montserrat'; font-size: 11px; font-weight: 600; padding: 5px 9px; border-radius: 8px; }
+  #t3 .chip i { width: 6px; height: 6px; border-radius: 50%; background: #10A37F; }
+  #t4 { left: 1336px; top: 510px; border: 2px dashed #C9CED6; background: rgba(255,255,255,0.6); display: grid; place-items: center; }
+  #t4 div { text-align: center; font-family: 'Montserrat'; color: #6B7280; }
+  #t4 .pl { font-size: 44px; font-weight: 300; line-height: 1; }
+  #t4 .tx { font-size: 14px; font-weight: 700; letter-spacing: 0.14em; margin-top: 6px; }
+  .tlabel { position: absolute; top: 708px; width: 304px; text-align: center; font-family: 'Montserrat'; font-weight: 600; font-size: 19px; color: #374151; }
+  #node { position: absolute; left: 880px; top: 175px; width: 160px; height: 160px; }
+  #node .disc { position: absolute; inset: 0; border-radius: 50%; background: #fff; box-shadow: 0 24px 50px -20px rgba(14,80,50,0.35), 0 0 0 1px rgba(0,0,0,0.05); }
+  #node .ring { position: absolute; inset: 0; border-radius: 50%; border: 2px solid #0E9F6E; }
+  #node img { position: absolute; left: 30px; top: 30px; width: 100px; height: 100px; }
+  #caption { position: absolute; left: 0; right: 0; top: 790px; text-align: center; font-family: 'Montserrat'; }
+  #caption .c1 { font-size: 58px; font-weight: 800; letter-spacing: -0.02em; color: #111827; }
+  #caption .c1 em { font-style: normal; color: #0E9F6E; }
+  #caption .c2 { font-size: 22px; font-weight: 500; color: #6B7280; margin-top: 12px; }
+
+  #endtext { position: absolute; left: 0; right: 0; top: 610px; text-align: center; font-family: 'Source Serif 4', serif; font-size: 92px; color: #1A1A1A; }
+  #tagline { position: absolute; left: 0; right: 0; top: 750px; text-align: center; font-family: 'Montserrat'; font-weight: 600; font-size: 19px;
+             letter-spacing: 0.24em; color: #6B7280; text-transform: uppercase; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="dots"></div>
+  <div id="glow"></div>
+  <div class="win claude" id="wc"></div>
+  <div class="win gpt" id="wg"></div>
+
+  <svg id="net" viewBox="0 0 1920 1080"></svg>
+  <div class="tile" id="t3">
+    <div class="bar"><i></i><i></i><i></i></div>
+    <div class="ln" style="width:52%;background:#C678DD"></div>
+    <div class="ln" style="width:74%;background:#61AFEF;margin-left:18px"></div>
+    <div class="ln" style="width:40%;background:#98C379;margin-left:18px"></div>
+    <div class="ln" style="width:63%;background:#E5C07B;margin-left:36px"></div>
+    <div class="ln" style="width:30%;background:#56B6C2;margin-left:18px"></div>
+    <div class="chip"><i></i>quoryx</div>
+  </div>
+  <div class="tile" id="t4"><div><div class="pl">+</div><div class="tx">MCP</div></div></div>
+  <div class="tlabel" id="l1" style="left:280px">Claude</div>
+  <div class="tlabel" id="l2" style="left:632px">ChatGPT</div>
+  <div class="tlabel" id="l3" style="left:984px">Cursor</div>
+  <div class="tlabel" id="l4" style="left:1336px">Any MCP client</div>
+  <div id="node"><div class="ring"></div><div class="disc"></div><img src="assets/quoryx-mark.svg"></div>
+  <div id="caption"><div class="c1">One connection. <em>Every AI.</em></div><div class="c2">Quoryx MCP plugs into the AI tools your finance team already uses.</div></div>
+  <div id="endtext">quoryx.net</div>
+  <div id="tagline">Month-end close, from any AI</div>
+</div>
+
+<script src="timeline.js"></script>
+<script>
+const TL = window.TL;
+const MARK = 'assets/quoryx-mark.svg';
+
+// ---------- math helpers ----------
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, p) => a + (b - a) * p;
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const easeOut = p => 1 - Math.pow(1 - p, 3);
+const easeOutQuint = p => 1 - Math.pow(1 - p, 5);
+const easeInOut = p => p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+const easeInOutSine = p => -(Math.cos(Math.PI * p) - 1) / 2;
+// damped spring 0 -> 1 with a gentle overshoot
+const spring = p => p <= 0 ? 0 : p >= 1 ? 1 : 1 - Math.exp(-6.5 * p) * Math.cos(9 * p);
+const bump = (t, a, b) => { const p = prog(t, a, b); return Math.sin(Math.PI * p); };
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+// ---------- icons ----------
+const ICON = {
+  up: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10 16V4M4.5 9.5L10 4l5.5 5.5"/></svg>',
+  chev: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>',
+  doc: '<svg viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>',
+  spin: '<svg class="sp" viewBox="0 0 22 22" fill="none"><circle cx="11" cy="11" r="8" stroke="#E5E7EB" stroke-width="2.4"/><path d="M11 3a8 8 0 0 1 8 8" stroke="#0E9F6E" stroke-width="2.4" stroke-linecap="round"/></svg>',
+  check: '<svg class="ck" viewBox="0 0 22 22"><circle cx="11" cy="11" r="10" fill="#0E9F6E"/><path d="M6.5 11.3l3 3 6-6.3" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="15" /></svg>',
+};
+
+const STEPS = [['Reconciliation', '1,284 txns'], ['Invoice matching', '412 of 417'], ['Accruals & journals', '38 entries']];
+const ROWS = [['INV-2026-081', 'Global Tech LLC', '$14,250.00'], ['INV-2026-082', 'Acme Corp', '$8,900.50'],
+              ['INV-2026-083', 'Nexus Industries', '$42,100.00'], ['INV-2026-084', 'Stark Logistics', '$3,450.75']];
+
+function buildChat(el, kind) {
+  const claude = kind === 'claude';
+  el.innerHTML = `
+    <div class="top"><span class="dots3"><i></i><i></i><i></i></span>
+      <span class="brand">${claude ? 'Claude' : 'ChatGPT ' + ICON.chev}</span></div>
+    <div class="greet">${claude ? 'Good afternoon' : 'What can I help with?'}</div>
+    <div class="msgs"><div class="scroll">
+      <div class="ubub">${TL.prompt}</div>
+      <div class="atext"></div>
+      <div class="tool">
+        <div class="th"><img src="${MARK}"><b>Quoryx</b><code>month_end_close</code>
+          <span class="status"><span class="run">Running…</span><span class="done">✓ Complete</span></span></div>
+        <div class="steps">${STEPS.map(s => `<div class="step"><span class="ic">${ICON.spin}${ICON.check}</span><span>${s[0]}</span><span class="meta">${s[1]}</span></div>`).join('')}</div>
+      </div>
+      <div class="rep">
+        <div class="rh"><img src="${MARK}"><div><div class="t1">Month-end close</div><div class="t2">September 2026 · Report ready</div></div><span class="pill">COMPLETE</span></div>
+        <div class="stats">
+          <div class="stat"><div class="k">AUTO-MATCH</div><div class="v" style="color:#0E9F6E"><span class="n1">98.9</span>%</div></div>
+          <div class="stat"><div class="k">TIME SAVED</div><div class="v">~<span class="n2">26</span><small>hrs</small></div></div>
+          <div class="stat"><div class="k">TRANSACTIONS</div><div class="v"><span class="n3">1,284</span></div></div>
+        </div>
+        <div class="rows">${ROWS.map(r => `<div class="row"><span class="doc">${ICON.doc}</span><span class="id">${r[0]}</span><span class="co">${r[1]}</span><span class="amt">${r[2]}</span><span class="m">MATCHED</span></div>`).join('')}</div>
+        <div class="rf">${ICON.doc}<span>September_Close_Report.pdf</span><span class="dl">Download ↓</span></div>
+      </div>
+    </div></div>
+    <div class="composer">
+      <div class="field"><span class="ph">${claude ? 'How can I help you today?' : 'Ask anything'}</span><span class="typed"></span><span class="caret"></span></div>
+      <div class="crow"><span class="plus">+</span><span class="conn"><img src="${MARK}">Quoryx<span class="led"></span></span>
+        <span class="grow"></span><span class="model">${claude ? 'Claude' : ''}</span><span class="send">${ICON.up}</span></div>
+    </div>`;
+  const q = s => el.querySelector(s), qa = s => [...el.querySelectorAll(s)];
+  return { el, kind, greet: q('.greet'), scroll: q('.scroll'), ubub: q('.ubub'), atext: q('.atext'), tool: q('.tool'),
+    run: q('.run'), done: q('.done'), steps: qa('.step'), rep: q('.rep'), rh: q('.rh'), stats: qa('.stat'), rows: qa('.row'), rf: q('.rf'),
+    n1: q('.n1'), n2: q('.n2'), n3: q('.n3'), composer: q('.composer'), ph: q('.ph'), typed: q('.typed'), caret: q('.caret'), send: q('.send') };
+}
+
+// Derive every beat of a chat scene from its config (so audio and video share one source of truth).
+function chatTimes(cfg, reply) {
+  const r = rng(cfg.seed), chars = [];
+  let t = cfg.typeStart;
+  for (const ch of TL.prompt) {
+    chars.push(t);
+    let gap = cfg.charDelay * (0.55 + r() * 0.9);
+    if (ch === ',') gap += cfg.charDelay * 4;
+    if (ch === ' ' && r() < 0.25) gap += cfg.charDelay * 1.5;
+    t += gap;
+  }
+  const p = cfg.pace, typeEnd = chars[chars.length - 1];
+  const send = typeEnd + 0.3;
+  const tool = send + 0.85 * p;
+  const steps = [tool + 0.5 * p, tool + 0.9 * p, tool + 1.3 * p];
+  const toolDone = steps[2] + 0.12;
+  return { chars, typeEnd, send, reply: send + 0.42 * p, replyText: reply, tool, steps, toolDone, report: toolDone + 0.22 };
+}
+
+const C = buildChat(document.getElementById('wc'), 'claude');
+const G = buildChat(document.getElementById('wg'), 'gpt');
+C.T = chatTimes(TL.claude, "I'll run the month-end close with Quoryx.");
+G.T = chatTimes(TL.gpt, 'On it — running your month-end close through Quoryx.');
+const skin = { claude: { sendOn: '#C96442', sendOff: '#E7C9BC', arrow: '#fff' }, gpt: { sendOn: '#0D0D0D', sendOff: '#D7D7D7', arrow: '#fff' } };
+
+// Scroll targets: each time a block appears, the chat scrolls so it stays in view.
+function scrollPlan(S) {
+  const view = S.el.querySelector('.msgs').clientHeight - 24;
+  const bottom = e => e.offsetTop + e.offsetHeight + 24;
+  const T = S.T;
+  const stepsH = S.el.querySelector('.steps').offsetHeight + 10;
+  return [[T.send, bottom(S.ubub)], [T.reply, bottom(S.atext)], [T.tool, bottom(S.tool)], [T.report + 0.15, bottom(S.rep) - stepsH]]
+    .map(([t, b]) => [t, Math.max(0, b - view)]);
+}
+
+const set = (e, css) => { for (const k in css) e.style[k] = css[k]; };
+
+function renderChat(S, t) {
+  const T = S.T, sk = skin[S.kind];
+  // typing
+  const n = T.chars.filter(c => c <= t).length;
+  const sent = t >= T.send;
+  S.typed.textContent = sent ? '' : TL.prompt.slice(0, n);
+  S.ph.style.opacity = (n === 0 || t >= T.send + 0.35) ? 1 : 0;
+  if (sent) S.ph.textContent = S.kind === 'claude' ? 'Reply to Claude…' : 'Ask anything';
+  const typing = n > 0 && t < T.typeEnd + 0.15;
+  const blink = typing ? 1 : (Math.floor(t * 2.2) % 2 === 0 ? 1 : 0);
+  S.caret.style.opacity = blink;
+  S.caret.style.marginLeft = n === 0 || sent ? '0' : '1px';
+  // send button
+  const press = bump(t, T.send - 0.08, T.send + 0.14);
+  set(S.send, { background: n > 0 && !sent ? sk.sendOn : sk.sendOff, color: sk.arrow, transform: `scale(${1 - 0.14 * press})` });
+  // composer drops from centre to bottom once sent
+  const drop = easeInOut(prog(t, T.send - 0.02, T.send + 0.55));
+  S.composer.style.top = lerp(320, 900 - 28 - 132, drop) + 'px';
+  set(S.greet, { opacity: 1 - prog(t, T.send - 0.05, T.send + 0.1), transform: `translateY(${-24 * easeOut(prog(t, T.send, T.send + 0.4))}px)` });
+
+  // user bubble flies up out of the composer
+  const b = easeOutQuint(prog(t, T.send + 0.04, T.send + 0.6));
+  set(S.ubub, { opacity: prog(t, T.send + 0.1, T.send + 0.26), transform: `translateY(${lerp(90, 0, b)}px) scale(${lerp(0.94, 1, b)})` });
+
+  // assistant streams a short reply word by word
+  const words = T.replyText.split(' ');
+  const wn = Math.ceil(prog(t, T.reply, T.reply + 0.45 * TL[S.kind === 'claude' ? 'claude' : 'gpt'].pace + 0.15) * words.length);
+  S.atext.textContent = words.slice(0, wn).join(' ');
+
+  // tool call card
+  const tp = spring(prog(t, T.tool, T.tool + 0.7));
+  set(S.tool, { opacity: prog(t, T.tool, T.tool + 0.2), transform: `translateY(${(1 - tp) * 18}px) scale(${lerp(0.97, 1, tp)})` });
+  const isDone = t >= T.toolDone;
+  S.run.style.opacity = isDone ? 0 : 1;
+  S.run.style.backgroundPosition = `${100 - ((t * 70) % 100) * 1.5}% 0`;
+  const dp = spring(prog(t, T.toolDone, T.toolDone + 0.5));
+  set(S.done, { opacity: prog(t, T.toolDone, T.toolDone + 0.12), transform: `scale(${lerp(0.7, 1, dp)})` });
+  const collapse = easeInOut(prog(t, T.report - 0.05, T.report + 0.5));
+  if (S.stepsH === undefined) S.stepsH = S.el.querySelector('.steps').offsetHeight;
+  set(S.el.querySelector('.steps'), { height: lerp(S.stepsH, 0, collapse) + 'px', marginTop: lerp(10, 0, collapse) + 'px', opacity: 1 - collapse });
+  S.steps.forEach((st, i) => {
+    const appear = i === 0 ? T.tool + 0.15 : T.steps[i - 1] + 0.02;
+    const ap = easeOut(prog(t, appear, appear + 0.3));
+    set(st, { opacity: ap, transform: `translateX(${(1 - ap) * -10}px)` });
+    const checked = t >= T.steps[i];
+    const sp = st.querySelector('.sp'), ck = st.querySelector('.ck');
+    set(sp, { opacity: checked ? 0 : 1, transform: `rotate(${t * 520}deg)` });
+    const cp = spring(prog(t, T.steps[i], T.steps[i] + 0.45));
+    set(ck, { opacity: checked ? 1 : 0, transform: `scale(${lerp(0.4, 1, cp)})` });
+    ck.querySelector('path').style.strokeDashoffset = 15 * (1 - easeOut(prog(t, T.steps[i] + 0.05, T.steps[i] + 0.3)));
+    st.querySelector('.meta').style.opacity = prog(t, T.steps[i], T.steps[i] + 0.2);
+  });
+
+  // report card
+  const R = T.report, k = S.kind === 'gpt' ? 0.75 : 1, rp = spring(prog(t, R, R + 0.8 * k));
+  set(S.rep, { opacity: prog(t, R, R + 0.2), transform: `translateY(${(1 - rp) * 34}px) scale(${lerp(0.96, 1, rp)})` });
+  S.stats.forEach((s, i) => { const p = easeOut(prog(t, R + (0.12 + i * 0.07) * k, R + (0.5 + i * 0.07) * k));
+    set(s, { opacity: p, transform: `translateY(${(1 - p) * 10}px)` }); });
+  const cnt = easeOut(prog(t, R + 0.15 * k, R + 1.0 * k));
+  S.n1.textContent = (98.9 * cnt).toFixed(1);
+  S.n2.textContent = Math.round(26 * cnt);
+  S.n3.textContent = Math.round(1284 * cnt).toLocaleString('en-US');
+  S.rows.forEach((row, i) => { const a = R + (0.3 + i * 0.08) * k, p = easeOut(prog(t, a, a + 0.4 * k));
+    set(row, { opacity: p, transform: `translateY(${(1 - p) * 12}px)` });
+    const m = row.querySelector('.m'), mp = spring(prog(t, a + 0.18 * k, a + 0.6 * k));
+    set(m, { opacity: prog(t, a + 0.18 * k, a + 0.3 * k), transform: `scale(${lerp(0.6, 1, mp)})` }); });
+  const fp = easeOut(prog(t, R + 0.7 * k, R + 1.0 * k));
+  set(S.rf, { opacity: fp, transform: `translateY(${(1 - fp) * 8}px)` });
+
+  // chat scroll
+  if (!S.plan) S.plan = scrollPlan(S);
+  let y = 0, prev = 0;
+  for (const [at, target] of S.plan) { y += (target - prev) * easeInOut(prog(t, at, at + 0.6)); prev = target; }
+  S.scroll.style.transform = `translateY(${-y}px)`;
+}
+
+// ---------- network scene ----------
+const TILES = [432, 784, 1136, 1488], TILE_Y = 600, NODE = [960, 255];
+const net = document.getElementById('net');
+net.innerHTML = TILES.map(cx => `<path class="ln" d="M${NODE[0]} ${NODE[1] + 80} C${NODE[0]} ${NODE[1] + 180}, ${cx} ${TILE_Y - 180}, ${cx} ${TILE_Y - 92}"
+  fill="none" stroke="#B9C6BF" stroke-width="2.5" stroke-linecap="round"/>`).join('') +
+  TILES.map(() => `<circle class="pulse" r="6" fill="#0E9F6E"/>`).join('');
+const lines = [...net.querySelectorAll('.ln')], pulses = [...net.querySelectorAll('.pulse')];
+const lens = lines.map(l => l.getTotalLength());
+lines.forEach((l, i) => l.style.strokeDasharray = lens[i]);
+const $ = id => document.getElementById(id);
+const labels = ['l1', 'l2', 'l3', 'l4'].map($);
+
+function winTransform(el, x, y, s, blur, radius) {
+  set(el, { transform: `translate(${x}px, ${y}px) scale(${s})`, filter: blur > 0.05 ? `blur(${blur}px)` : 'none', borderRadius: radius + 'px' });
+}
+
+function render(t) {
+  const N = TL.network.start, L = TL.logo.start, tr = TL.transition;
+
+  $('dots').style.opacity = 0.75 * easeOut(prog(t, 0, 0.9));
+  $('dots').style.transform = `translateY(${-t * 4}px)`;
+
+  // chat windows
+  renderChat(C, t); renderChat(G, t);
+  const tp = easeInOut(prog(t, tr.start, tr.start + tr.dur));
+  const blur = 7 * Math.sin(Math.PI * tp);
+  const enter = easeOutQuint(prog(t, TL.claude.enter, TL.claude.enter + 0.9));
+  const push = 0.03 * easeInOutSine(prog(t, 0.5, tr.start));
+  const netp = easeInOut(prog(t, N, N + 0.7));
+  const radius = lerp(22, 60, netp);
+  // Claude: enters, slides off left, then returns as a miniature tile
+  {
+    let x = -1700 * tp, y = lerp(40, 0, enter), s = lerp(0.96, 1, enter) * (1 + push) * lerp(1, 0.86, tp);
+    x = lerp(x, TILES[0] - 960, netp); y = lerp(y, TILE_Y - 540, netp); s = lerp(s, 0.2, netp);
+    winTransform(C.el, x, y, s, blur, radius);
+    C.el.style.opacity = enter;
+    C.el.style.display = (t > tr.start + tr.dur && t < N) ? 'none' : 'block';
+  }
+  // ChatGPT: slides in from the right, then shrinks into its tile
+  {
+    const gpush = 0.025 * easeInOutSine(prog(t, tr.start + tr.dur, N));
+    let x = 1700 * (1 - tp), y = 0, s = lerp(0.86, 1, tp) * (1 + gpush);
+    x = lerp(x, TILES[1] - 960, netp); y = lerp(y, TILE_Y - 540, netp); s = lerp(s, 0.2, netp);
+    winTransform(G.el, x, y, s, blur, radius);
+    G.el.style.display = t < tr.start ? 'none' : 'block';
+  }
+  // other tiles, node, lines, caption
+  const out = easeInOut(prog(t, L, L + 0.6));
+  const fadeOut = 1 - out;
+  const sceneShift = `translateY(${out * 40}px) scale(${lerp(1, 0.94, out)})`;
+  [$('t3'), $('t4')].forEach((el, i) => {
+    const a = N + 0.4 + i * 0.1, p = spring(prog(t, a, a + 0.6));
+    set(el, { opacity: prog(t, a, a + 0.15) * fadeOut, transform: `${sceneShift} scale(${lerp(0.6, 1, p)})`, transformOrigin: '50% 50%' });
+  });
+  [C.el, G.el].forEach(el => el.style.opacity = (el === C.el ? enter : 1) * fadeOut);
+  labels.forEach((el, i) => { const a = N + 0.65 + i * 0.06, p = easeOut(prog(t, a, a + 0.35));
+    set(el, { opacity: p * fadeOut, transform: `translateY(${(1 - p) * 10 + out * 40}px)` }); });
+  lines.forEach((l, i) => { const a = N + 0.6 + i * 0.05;
+    l.style.strokeDashoffset = lens[i] * (1 - easeInOut(prog(t, a, a + 0.4)));
+    l.style.opacity = fadeOut; });
+  pulses.forEach((c, i) => {
+    const start = N + 1.0 + i * 0.12;
+    const ph = t < start ? -1 : ((t - start) / 0.9) % 1;
+    const pt = lines[i].getPointAtLength(lens[i] * clamp(ph));
+    c.setAttribute('cx', pt.x); c.setAttribute('cy', pt.y);
+    c.style.opacity = ph < 0 ? 0 : Math.sin(Math.PI * ph) * fadeOut;
+  });
+  const cp = easeOut(prog(t, N + 0.8, N + 1.25));
+  set($('caption'), { opacity: cp * fadeOut, transform: `translateY(${(1 - cp) * 24 + out * 30}px)` });
+
+  // Quoryx node → end-card logo
+  const np = spring(prog(t, N + 0.45, N + 1.05));
+  const lp = easeInOut(prog(t, L + 0.1, L + 0.9));
+  const node = $('node');
+  set(node, { opacity: prog(t, N + 0.45, N + 0.6), transform: `translateY(${lerp(0, 190, lp)}px) scale(${lerp(0.5, 1, np) * lerp(1, 2.05, lp)})` });
+  node.querySelector('.disc').style.opacity = 1 - lp;
+  const ring = ((t - N - 1.0) / 1.1) % 1;
+  set(node.querySelector('.ring'), { opacity: t > N + 1.0 ? (1 - ring) * 0.6 * (1 - lp) : 0, transform: `scale(${1 + ring * 0.45})` });
+  // disc sits above the ring; image above both
+  node.querySelector('img').style.zIndex = 2;
+
+  const ep = easeOutQuint(prog(t, L + 0.6, L + 1.3));
+  set($('endtext'), { opacity: prog(t, L + 0.6, L + 0.95), transform: `translateY(${(1 - ep) * 26}px)`, letterSpacing: lerp(0.08, 0, ep) + 'em' });
+  const gp = easeOut(prog(t, L + 0.85, L + 1.3));
+  set($('tagline'), { opacity: gp, transform: `translateY(${(1 - gp) * 12}px)` });
+}
+
+// Sound cue list — consumed by sfx.py so audio lands on exact frames.
+function getCues() {
+  const cues = [];
+  for (const S of [C, G]) {
+    const T = S.T;
+    T.chars.forEach((c, i) => cues.push({ t: c, type: TL.prompt[i] === ' ' ? 'space' : 'key' }));
+    cues.push({ t: T.send - 0.02, type: 'send' });
+    cues.push({ t: T.send + 0.1, type: 'swoosh_up' });
+    cues.push({ t: T.tool, type: 'pop' });
+    T.steps.forEach((s, i) => cues.push({ t: s, type: 'check', i }));
+    cues.push({ t: T.report, type: 'card' });
+    const k = S.kind === 'gpt' ? 0.75 : 1;
+    S.rows.forEach((_, i) => cues.push({ t: T.report + (0.48 + i * 0.08) * k, type: 'tick', i }));
+  }
+  cues.push({ t: TL.transition.start - 0.05, type: 'whoosh' });
+  const N = TL.network.start, L = TL.logo.start;
+  cues.push({ t: N, type: 'whoosh_soft' });
+  cues.push({ t: N + 0.45, type: 'node' });
+  [0.4, 0.5].forEach(d => cues.push({ t: N + d, type: 'pop' }));
+  [0, 1, 2, 3].forEach(i => cues.push({ t: N + 0.6 + i * 0.05, type: 'pluck', i }));
+  cues.push({ t: L - 0.9, type: 'riser' });
+  cues.push({ t: L + 0.55, type: 'chime' });
+  return cues.sort((a, b) => a.t - b.t);
+}
+
+window.render = render; window.getCues = getCues;
+const qt = new URLSearchParams(location.search).get('t');
+window.ready = Promise.all(['Inter', 'Montserrat', 'Source Serif 4'].flatMap(f => [400, 500, 600, 700, 800].map(w => document.fonts.load(`${w} 20px '${f}'`))))
+  .then(() => document.fonts.ready).then(() => render(qt ? parseFloat(qt) : 0));
+</script>
+</body>
+</html>

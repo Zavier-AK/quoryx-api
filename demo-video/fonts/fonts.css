@@ -1,0 +1,4 @@
+/* Variable fonts (latin subset) from Google Fonts, bundled so renders are deterministic offline. */
+@font-face{font-family:'Inter';font-weight:100 900;font-display:block;src:url(Inter.woff2) format('woff2');}
+@font-face{font-family:'Montserrat';font-weight:100 900;font-display:block;src:url(Montserrat.woff2) format('woff2');}
+@font-face{font-family:'Source Serif 4';font-weight:200 900;font-display:block;src:url(SourceSerif4.woff2) format('woff2');}
