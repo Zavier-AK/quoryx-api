@@ -133,90 +133,92 @@ def midi(m):
     return 440.0 * 2 ** ((m - 69) / 12)
 
 
-def marimba(f, dur=0.35, gain=1.0):
+def keys_ep(f, dur=0.9, gain=1.0):
+    """Soft electric-piano tone: warm fundamental, a touch of bell on the attack."""
     t = t_axis(dur)
-    tone = np.sin(2 * np.pi * f * t) + 0.25 * np.sin(2 * np.pi * 4 * f * t) * np.exp(-t / 0.03)
-    return tone * env(len(t), 0.002, 0.12) * gain
+    tone = (np.sin(2 * np.pi * f * t) + 0.18 * np.sin(2 * np.pi * 2 * f * t)
+            + 0.12 * np.sin(2 * np.pi * 7 * f * t) * np.exp(-t / 0.02))
+    return lowpass(tone * env(len(t), 0.006, 0.35), 2800) * gain
 
 
-def glock(f, dur=0.6, gain=1.0):
+def pluck_synth(f, dur=0.18, gain=1.0):
+    """Short filtered-saw pluck for the arpeggio."""
     t = t_axis(dur)
-    tone = np.sin(2 * np.pi * f * t) + 0.3 * np.sin(2 * np.pi * 2.76 * f * t) * np.exp(-t / 0.08)
-    return tone * env(len(t), 0.001, 0.22) * gain
+    saw = sum(np.sin(2 * np.pi * f * h * t) / h for h in range(1, 7))
+    return lowpass(saw * env(len(t), 0.002, 0.05), 2200) * gain
 
 
-def bass(f, dur=0.3):
+def bass(f, dur=0.22):
     t = t_axis(dur)
-    tone = np.sin(2 * np.pi * f * t) + 0.3 * np.sin(2 * np.pi * 2 * f * t)
-    return lowpass(tone * env(len(t), 0.004, 0.14), 600) * 0.9
+    tone = np.sin(2 * np.pi * f * t) + 0.35 * np.sin(2 * np.pi * 2 * f * t) + 0.15 * np.sin(2 * np.pi * 3 * f * t)
+    return lowpass(tone * env(len(t), 0.004, 0.09), 450)
 
 
 def kick():
-    return sweep(130, 45, 0.18, 0.4) * env(int(0.18 * SR), 0.001, 0.07) * 0.9
+    return sweep(110, 42, 0.2, 0.35) * env(int(0.2 * SR), 0.001, 0.08) * 0.9
 
 
-def clap():
-    n = int(0.12 * SR)
-    return band(rng.standard_normal(n), 1200, 5000) * env(n, 0.001, 0.03) * 0.5
+def snap():
+    n = int(0.08 * SR)
+    body = np.sin(2 * np.pi * 1800 * t_axis(0.08)) * env(n, 0.0005, 0.008) * 0.3
+    return (band(rng.standard_normal(n), 2000, 6000) * env(n, 0.0005, 0.018) + body) * 0.4
 
 
-def hat(open_=False):
-    n = int((0.09 if open_ else 0.04) * SR)
-    return band(rng.standard_normal(n), 7000, 14000) * env(n, 0.0005, 0.03 if open_ else 0.008) * 0.3
+def hat():
+    n = int(0.05 * SR)
+    return band(rng.standard_normal(n), 8000, 15000) * env(n, 0.0005, 0.012) * 0.3
 
 
-# Upbeat I–V–vi–IV groove in C major at 120 BPM (one bar = 2 s).
-CHORDS = {"C": [60, 64, 67, 72], "G": [59, 62, 67, 71], "Am": [57, 60, 64, 69], "F": [57, 60, 65, 69]}
-ROOTS = {"C": 36, "G": 43, "Am": 45, "F": 41}
-BARS = ["C", "G", "Am", "F", "C", "G", "F"]
-MELODY = {4: [(0, 76), (1, 79), (2, 84), (4, 79), (6, 76)],
-          5: [(0, 74), (1, 79), (2, 83), (4, 86), (6, 83)],
-          6: [(0, 84), (1, 81), (2, 77), (4, 79), (5, 83), (6, 86)]}
+# Modern, confident "fintech product" groove at 116 BPM: lush 9th chords on a
+# soft electric piano, a quiet 16th-note pluck arpeggio, a pulsing muted bass
+# and restrained drums. No lead melody.
+BPM = 116
+CHORDS = {"Am9": [57, 60, 64, 67, 71], "Fmaj9": [53, 57, 60, 64, 67], "Cmaj9": [48, 55, 59, 62, 64],
+          "G6": [55, 59, 62, 64, 69]}
+ROOTS = {"Am9": 33, "Fmaj9": 29, "Cmaj9": 36, "G6": 31}
+BARS = ["Am9", "Fmaj9", "Cmaj9", "G6", "Am9", "Fmaj9", "G6"]
 
 
 def music(duration, final_hit):
-    """Light, happy 'finance explainer' groove: marimba chords, plucked bass, soft
-    drums and a glockenspiel hook. Everything is short and percussive (no sustained
-    tones), and the last chord lands exactly on `final_hit` (the logo chime)."""
-    beat = 0.5
+    """Background track. Everything is short and percussive (no sustained drones),
+    and the final chord lands exactly on `final_hit` (the logo chime)."""
+    beat = 60 / BPM
+    s16 = beat / 4
     start = final_hit - len(BARS) * 4 * beat
     out = np.zeros((int(duration * SR) + SR, 2))
-    e = beat / 2  # eighth note
 
     for b, name in enumerate(BARS):
         t0 = start + b * 4 * beat
-        build = b == len(BARS) - 1
-        chord = CHORDS[name]
-        # marimba chord stabs on a syncopated eighth pattern
-        for pos in [0, 2, 3, 5, 6]:
-            c = CHORDS["G"] if build and pos >= 4 else chord
-            for k, m in enumerate(c):
-                place(out, marimba(midi(m), gain=0.07 * (1.2 if pos == 0 else 1)), t0 + pos * e, -0.3 + 0.2 * k)
+        chord, root = CHORDS[name], ROOTS[name]
+        # electric piano: on the one and a pushed "and of two"
+        for pos, g in [(0, 1.0), (6, 0.75)]:
+            for k, m in enumerate(chord):
+                place(out, keys_ep(midi(m), gain=0.055 * g), t0 + pos * s16 + k * 0.004, -0.25 + 0.12 * k)
+        # arpeggio: upper chord tones, rising through the bar
+        arp = [chord[1], chord[2], chord[3], chord[4], chord[3] + 12 if b % 2 else chord[2] + 12]
+        for i in range(16):
+            gain = 0.018 + (0.006 if i % 4 == 0 else 0)
+            place(out, pluck_synth(midi(arp[i % len(arp)] + 12), gain=gain), t0 + i * s16, 0.45 if i % 2 else -0.45)
         if b >= 1:
-            root = ROOTS["G"] if build else ROOTS[name]
-            for pos, off in [(0, 0), (3, 0), (4, 12), (6, 0)]:
-                if build and pos >= 4:
-                    root = ROOTS["G"]
-                place(out, bass(midi(root + 12 + off)) * 0.22, t0 + pos * e)
-            for pos in [0, 4]:
-                place(out, kick() * 0.28, t0 + pos * e)
-            for pos in [2, 6]:
-                place(out, clap() * 0.16, t0 + pos * e, 0.1)
-        for pos in range(8):
-            if b >= 1 or pos % 2:
-                place(out, hat(open_=pos % 2 == 1) * (0.12 if pos % 2 else 0.07), t0 + pos * e, 0.35)
-        if build:  # snare-roll lift into the logo
+            # pulsing muted bass on every eighth, root with an octave pop
             for i in range(8):
-                place(out, clap() * (0.05 + 0.02 * i), t0 + 4 * beat * 0.5 + i * e / 2, -0.1)
-        for pos, m in MELODY.get(b, []):
-            place(out, glock(midi(m), gain=0.08), t0 + pos * e, 0.2)
+                place(out, bass(midi(root + 12 + (12 if i in (3, 7) else 0))) * 0.2, t0 + i * 2 * s16)
+            for i in (0, 8):
+                place(out, kick() * 0.3, t0 + i * s16)
+            for i in (4, 12):
+                place(out, snap() * 0.14, t0 + i * s16, 0.1)
+            for i in range(2, 16, 4):
+                place(out, hat() * 0.12, t0 + i * s16, 0.3)
+        if b == len(BARS) - 1:  # pull the drums out for the last half bar before the logo
+            cut = int((t0 + 2 * beat) * SR)
+            out[cut:int(final_hit * SR)] *= np.linspace(1, 0.35, int(final_hit * SR) - cut)[:, None]
 
-    # final chord on the logo
-    for k, m in enumerate(CHORDS["C"] + [76, 79]):
-        place(out, marimba(midi(m), 1.2, 0.08), final_hit, -0.3 + 0.12 * k)
-    place(out, bass(midi(48), 0.8) * 0.3, final_hit)
+    # resolve on Cmaj9 with the logo
+    for k, m in enumerate(CHORDS["Cmaj9"] + [67, 71]):
+        place(out, keys_ep(midi(m), 1.8, 0.06), final_hit + k * 0.006, -0.3 + 0.1 * k)
+    place(out, bass(midi(36), 0.6) * 0.3, final_hit)
     place(out, kick() * 0.3, final_hit)
-    fade_in = np.clip(np.arange(out.shape[0]) / SR / 0.6, 0, 1)
+    fade_in = np.clip(np.arange(out.shape[0]) / SR / 0.8, 0, 1)
     return out * fade_in[:, None]
 
 
