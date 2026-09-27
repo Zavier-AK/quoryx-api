@@ -5,7 +5,7 @@ window.TL = {
   duration: 20.2,
   music: 'cinematic',
   prompt: "Hey Quoryx, run the month-end close and give me a report",
-  reply: "Running the month-end close with Quoryx.",
+  reply: "Running the month-end close with Quoryx MCP.",
   question: "I found 3 discrepancies. Should I resolve them?",
   answer: "Yes",
 

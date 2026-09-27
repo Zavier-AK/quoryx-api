@@ -12,6 +12,9 @@
   #glow { position: absolute; inset: -200px; background: radial-gradient(ellipse 45% 40% at 50% 50%, rgba(46,200,140,0.16), rgba(10,13,12,0) 70%); }
   #vignette { position: absolute; inset: 0; background: radial-gradient(ellipse 75% 70% at 50% 50%, rgba(0,0,0,0) 60%, rgba(0,0,0,0.45) 100%); pointer-events: none; }
   #grain { position: absolute; inset: 0; width: 1920px; height: 1080px; opacity: 0.18; pointer-events: none; }
+  #title { position: absolute; left: 0; right: 0; top: 470px; text-align: center; font-family: 'Montserrat'; font-weight: 700; font-size: 40px;
+           color: #F4F2EC; text-shadow: 0 0 30px rgba(61,220,151,0.45); }
+  #title em { font-style: normal; color: #3DDC97; }
   #line { position: absolute; left: 260px; top: 539px; width: 1400px; height: 2px; background: linear-gradient(90deg, transparent, #7CF5C1 20%, #E8FFF5 50%, #7CF5C1 80%, transparent);
           box-shadow: 0 0 18px 4px rgba(61,220,151,0.55); }
 
@@ -148,6 +151,7 @@
   #fc .side .ubub { background: #2B2B2B; align-self: flex-end; }
   #fc .fline { font-size: 19px; }
   #fcap { position: absolute; left: 0; right: 0; top: 1010px; text-align: center; font-family: 'Montserrat'; font-size: 24px; font-weight: 600; letter-spacing: 0.02em; }
+  #fcap strong { color: #3DDC97; font-weight: 700; margin-right: 18px; }
   #fcap span { color: #5E615F; }
   #fcap span.on { color: #F4F2EC; }
   #fcap em { font-style: normal; color: #3A3D3B; margin: 0 14px; }
@@ -165,6 +169,10 @@
   #ring { position: absolute; left: 790px; top: 230px; width: 340px; height: 340px; border-radius: 50%; border: 1.5px solid rgba(61,220,151,0.6);
           box-shadow: 0 0 40px rgba(61,220,151,0.35), inset 0 0 40px rgba(61,220,151,0.15); }
   #endtext { position: absolute; left: 0; right: 0; top: 600px; text-align: center; font-family: 'Source Serif 4', serif; font-size: 92px; color: #F4F2EC; }
+  #mcp { position: absolute; left: 50%; top: 790px; transform: translateX(-50%); font-family: 'Montserrat'; font-weight: 700; font-size: 14px; letter-spacing: 0.2em;
+         color: #3DDC97; border: 1px solid rgba(61,220,151,0.45); background: rgba(61,220,151,0.08); padding: 9px 18px; border-radius: 999px; white-space: nowrap; }
+  .via { position: absolute; left: 26px; top: 240px; font-size: 14px; font-weight: 600; color: #3DDC97; display: flex; align-items: center; gap: 8px; }
+  .via i { width: 7px; height: 7px; border-radius: 50%; background: #3DDC97; box-shadow: 0 0 8px #3DDC97; }
   #tagline { position: absolute; left: 0; right: 0; top: 740px; text-align: center; font-family: 'Montserrat'; font-weight: 600; font-size: 19px;
              letter-spacing: 0.22em; color: #7F8A85; text-transform: uppercase; }
 </style>
@@ -177,12 +185,14 @@
 </svg>
 <div id="stage">
   <div id="glow"></div>
+  <div id="title">QUORYX <em>MCP</em></div>
   <div id="line"></div>
   <div id="wrap"><div id="world">
     <div class="panel" id="px">
       <div class="ph1"><span class="dot" style="background:#1AB4D7;box-shadow:0 0 16px rgba(26,180,215,0.5)"></span><span class="nm">Xero</span><span class="sb">DRAFT INVOICES</span></div>
       <div class="skel"><i style="width:30%"></i><i style="width:22%;margin-left:auto"></i></div>
       <div class="skel"><i style="width:40%"></i><i style="width:18%;margin-left:auto"></i></div>
+      <div class="via"><i></i>Synced via Quoryx MCP</div>
       <div class="slot"></div>
       <div class="paper"><div class="pk">INVOICE</div><div class="pn">INV-2026-085</div><div class="pc">Stripe customer · payout Sep 24</div>
         <div class="pl"><i style="width:70%"></i><i style="width:52%"></i><i style="width:60%"></i></div><div class="pa">$3,980.00</div><div class="stamp">DRAFT</div></div>
@@ -191,6 +201,7 @@
       <div class="ph1"><span class="dot" style="background:#4F7BF7;box-shadow:0 0 16px rgba(79,123,247,0.5)"></span><span class="nm">e-conomic</span><span class="sb">DRAFT INVOICES</span></div>
       <div class="skel"><i style="width:34%"></i><i style="width:20%;margin-left:auto"></i></div>
       <div class="skel"><i style="width:26%"></i><i style="width:24%;margin-left:auto"></i></div>
+      <div class="via"><i></i>Synced via Quoryx MCP</div>
       <div class="slot"></div>
       <div class="paper"><div class="pk">INVOICE</div><div class="pn">Invoice #1047</div><div class="pc">Brightline Ltd · amount adjustment</div>
         <div class="pl"><i style="width:64%"></i><i style="width:48%"></i><i style="width:58%"></i></div><div class="pa">$36.00</div><div class="stamp">DRAFT</div></div>
@@ -218,13 +229,14 @@
       <div class="fline" data-ck><span>Draft invoice created in <b>Xero</b></span></div>
       <div class="fline" data-ck><span>Draft invoice created in <b>e-conomic</b></span></div></div>
   </div>
-  <div id="fcap"><span>Claude</span><em>·</em><span>ChatGPT</span><em>·</em><span>Cursor</span><em>·</em><span>any MCP client</span></div>
+  <div id="fcap"><strong>One MCP server →</strong><span>Claude</span><em>·</em><span>ChatGPT</span><em>·</em><span>Cursor</span><em>·</em><span>any MCP client</span></div>
 
   <div id="end">
     <div id="ring"></div>
     <div id="logoBox"><img src="assets/quoryx-mark.svg"><div class="fx"><div class="tint"></div><div class="ls"></div></div></div>
     <div id="endtext">quoryx.net</div>
     <div id="tagline">Close the month. Fix what's wrong. From any AI.</div>
+    <div id="mcp">QUORYX MCP SERVER</div>
   </div>
 
   <canvas id="grain" width="480" height="270"></canvas>
@@ -262,7 +274,7 @@ $('chat').innerHTML = `
     <div class="ubub" id="ub1">${TL.prompt}</div>
     <div class="atext" id="a1"></div>
     <div class="tool" id="tool">
-      <div class="th"><img src="${MARK}"><b>Quoryx</b><code>month_end_close</code>
+      <div class="th"><img src="${MARK}"><b>Quoryx MCP</b><code>month_end_close</code>
         <span class="status"><span class="run">Running…</span><span class="done">✓ Complete</span></span></div>
       <div class="steps">${STEPS.map(s => `<div class="step"><span class="ic">${ICON.spin}${ICON.check}</span><span>${s[0]}</span><span class="meta">${s[1]}</span></div>`).join('')}</div>
     </div>
@@ -274,7 +286,7 @@ $('chat').innerHTML = `
   </div></div>
   <div class="composer" id="comp">
     <div class="field"><span class="ph" id="ph1">How can I help you today?</span><span id="typed"></span><span class="caret" id="caret"></span></div>
-    <div class="crow"><span class="plus">+</span><span class="conn"><img src="${MARK}">Quoryx<span class="led"></span></span>
+    <div class="crow"><span class="plus">+</span><span class="conn"><img src="${MARK}">Quoryx MCP<span class="led"></span></span>
       <span class="grow"></span><span class="model">Claude</span><span class="send" id="send">${ICON.up}</span></div>
   </div>`;
 $('fcard').innerHTML = `
@@ -443,8 +455,15 @@ function render(t) {
     set(paper, { opacity: prog(t, tp, tp + 0.08), transform: `translateY(${lerp(-420, 0, dp)}px) rotate(${lerp(-9, 0, dp)}deg)` });
     const sp = spring(prog(t, tp + 0.3, tp + 0.65));
     set(stamp, { opacity: prog(t, tp + 0.3, tp + 0.36), transform: `rotate(-12deg) scale(${lerp(2.2, 1, sp)})` });
+    const vp = easeOut(prog(t, tp + 0.35, tp + 0.7));
+    set(pn.querySelector('.via'), { opacity: vp, transform: `translateY(${(1 - vp) * 8}px)` });
     pn.style.boxShadow = `0 50px 100px -40px rgba(0,0,0,0.9), 0 0 ${60 * bump(t, tp - 0.1, tp + 0.6)}px rgba(61,220,151,${0.5 * bump(t, tp - 0.1, tp + 0.6)})`;
   });
+
+  // opening title: letter-spacing settles, then it hands over to the window
+  const ti = easeOutQuint(prog(t, 0.1, 0.7));
+  set($('title'), { opacity: prog(t, 0.1, 0.35) * (1 - prog(t, 0.85, 1.25)), letterSpacing: lerp(0.6, 0.28, ti) + 'em',
+                    transform: `translateY(${lerp(10, 0, ti) - 30 * easeInOut(prog(t, 0.85, 1.25))}px)` });
 
   // chat: typing
   const n = T.chars.filter(c => c <= t).length, yn = T.yesChars.filter(c => c <= t).length;
@@ -582,6 +601,8 @@ function render(t) {
   set($('endtext'), { opacity: prog(t, L0 + 0.55, L0 + 0.9), transform: `translateY(${(1 - ep) * 26}px)`, letterSpacing: lerp(0.08, 0, ep) + 'em' });
   const gp = easeOut(prog(t, L0 + 0.9, L0 + 1.4));
   set($('tagline'), { opacity: gp, transform: `translateY(${(1 - gp) * 12}px)` });
+  const mp = spring(prog(t, L0 + 1.15, L0 + 1.8));
+  set($('mcp'), { opacity: prog(t, L0 + 1.15, L0 + 1.35), transform: `translateX(-50%) scale(${lerp(0.8, 1, mp)})` });
 
   // film grain
   grainCtx.putImageData(grainTiles[Math.floor(t * 24) % 4], 0, 0);
