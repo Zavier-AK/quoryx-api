@@ -224,6 +224,121 @@ def music(duration, final_hit):
 
 # ---------- mix ----------
 
+# Darker, cinematic variant for experimental.html: 96 BPM, A minor that resolves to
+# C major on the logo. The arrangement follows story markers exported by the page.
+CINE_BPM = 96
+CINE_BARS = ["Am9", "Fmaj9", "Am9", "Dm9", "Fmaj9", "Cmaj9", "Fmaj9"]
+CINE_CHORDS = dict(CHORDS, Dm9=[50, 53, 57, 60, 64])
+CINE_ROOTS = dict(ROOTS, Dm9=38)
+
+
+def music_cinematic(duration, final_hit, marks):
+    beat = 60 / CINE_BPM
+    s16 = beat / 4
+    bar = 4 * beat
+    start = final_hit - len(CINE_BARS) * bar
+    out = np.zeros((int(duration * SR) + SR, 2))
+    tension = (marks.get("discrepancies", 7.3) - 0.2, marks.get("yes", 12.0))
+    build = marks.get("yes", 12.0)
+
+    for b, name in enumerate(CINE_BARS):
+        t0 = start + b * bar
+        last = b == len(CINE_BARS) - 1
+        for half in (0, 1):
+            h0 = t0 + half * 2 * beat
+            chord_name = "G6" if (last or b == 4) and half == 1 else name
+            chord, root = CINE_CHORDS[chord_name], CINE_ROOTS[chord_name]
+            tense = tension[0] <= h0 < tension[1]
+            # electric piano pad hits (short, re-struck, never sustained)
+            for k, m in enumerate(chord):
+                place(out, keys_ep(midi(m), 1.1, 0.05 if not tense else 0.04), h0 + k * 0.006, -0.3 + 0.15 * k)
+            if tense:  # sparse clock-like pulse while the discrepancies are on screen
+                for i in range(0, 8, 2):
+                    place(out, pluck_synth(midi(chord[3] + 12), 0.12, 0.012), h0 + i * s16, 0.4 if i % 4 else -0.4)
+                place(out, bass(midi(root + 12)) * 0.12, h0)
+                continue
+            full = h0 >= build or b in (1, 2)
+            if b >= 1:
+                for i in range(0, 8, 2):
+                    place(out, bass(midi(root + 12 + (12 if i == 6 else 0))) * 0.18, h0 + i * s16)
+            if full:
+                place(out, kick() * 0.3, h0)
+                place(out, snap() * 0.12, h0 + 4 * s16, 0.1)
+                for i in range(2, 8, 4):
+                    place(out, hat() * 0.12, h0 + i * s16, 0.3)
+            if h0 >= build:  # arpeggio drive after "Yes"
+                arp = [chord[1], chord[2], chord[3], chord[4]]
+                for i in range(8):
+                    place(out, pluck_synth(midi(arp[i % 4] + 12), gain=0.016), h0 + i * s16, 0.45 if i % 2 else -0.45)
+            elif b == 0:
+                for i in range(2, 8, 4):
+                    place(out, hat() * 0.07, h0 + i * s16, 0.3)
+        if last:  # pull everything back for the final half bar
+            cut = int((t0 + 2 * beat) * SR)
+            out[cut:int(final_hit * SR)] *= np.linspace(1, 0.3, int(final_hit * SR) - cut)[:, None]
+
+    for k, m in enumerate(CINE_CHORDS["Cmaj9"] + [67, 71]):
+        place(out, keys_ep(midi(m), 2.0, 0.06), final_hit + k * 0.006, -0.3 + 0.1 * k)
+    place(out, bass(midi(48), 0.7) * 0.3, final_hit)
+    place(out, kick() * 0.3, final_hit)
+    fade_in = np.clip(np.arange(out.shape[0]) / SR / 0.8, 0, 1)
+    return out * fade_in[:, None]
+
+
+# ---------- extra sounds for experimental.html ----------
+
+def shing():
+    t = t_axis(0.7)
+    n = len(t)
+    tone = sweep(1800, 3600, 0.7, 0.5) * env(n, 0.01, 0.25) * 0.05
+    air = band(rng.standard_normal(n), 6000, 12000) * env(n, 0.02, 0.2) * 0.05
+    return tone + air
+
+
+def impact(gain=0.32):
+    n = int(0.7 * SR)
+    boom = sweep(95, 38, 0.7, 0.4) * env(n, 0.002, 0.16) * gain
+    crack = lowpass(rng.standard_normal(n), 900) * env(n, 0.001, 0.03) * gain * 0.5
+    return boom + crack + swoosh(0.7, 200, 1200, gain * 0.25)
+
+
+def alert():
+    out = np.zeros(int(0.6 * SR))
+    for k, f in enumerate([739.99, 587.33]):
+        t = t_axis(0.35)
+        tone = (np.sin(2 * np.pi * f * t) + 0.2 * np.sin(2 * np.pi * 2 * f * t)) * env(len(t), 0.004, 0.09) * 0.12
+        i = int(k * 0.13 * SR)
+        out[i:i + len(tone)] += tone
+    return out
+
+
+def focus_tick():
+    w = swoosh(0.22, 1500, 5000, 0.035)
+    w[: int(0.08 * SR)] += tick(0) * 1.2
+    return w
+
+
+def sparkle(dur=0.8, gain=0.05):
+    n = int(dur * SR)
+    out = np.zeros(n)
+    for _ in range(26):
+        at = int(rng.uniform(0, dur - 0.08) * SR)
+        f = rng.uniform(2200, 5200) * (1 + at / n * 0.5)
+        g = t_axis(0.08)
+        out[at:at + len(g)] += np.sin(2 * np.pi * f * g) * env(len(g), 0.001, 0.018)
+    return out * gain + swoosh(dur, 800, 6000, 0.06)
+
+
+def paper():
+    thud = sweep(170, 80, 0.12) * env(int(0.12 * SR), 0.002, 0.03) * 0.22
+    return swoosh(0.25, 300, 2500, 0.07) + np.pad(thud, (0, int(0.25 * SR) - len(thud)))
+
+
+def stamp():
+    n = int(0.1 * SR)
+    return (band(rng.standard_normal(n), 200, 1500) * env(n, 0.0005, 0.02) + np.sin(2 * np.pi * 130 * t_axis(0.1)) * env(n, 0.001, 0.03)) * 0.3
+
+
 def place(mix, sig, at, pan=0.0):
     """Add a mono signal to the stereo mix at time `at` with equal-power pan (-1..1)."""
     i = int(round(at * SR))
@@ -242,7 +357,11 @@ def main(cue_path, out_path):
     duration = data["duration"]
     mix = np.zeros((int(duration * SR) + SR, 2))
     chime_t = next(c["t"] for c in data["cues"] if c["type"] == "chime")
-    mix += 0.4 * music(duration, chime_t)[: mix.shape[0]]  # sits under the SFX
+    if data.get("music", "groove") == "cinematic":
+        marks = {c["name"]: c["t"] for c in data["cues"] if c["type"] == "marker"}
+        mix += 0.4 * music_cinematic(duration, chime_t, marks)[: mix.shape[0]]
+    else:
+        mix += 0.4 * music(duration, chime_t)[: mix.shape[0]]  # sits under the SFX
 
     pluck_notes = [659.25, 783.99, 880.0, 1046.5]
     for c in data["cues"]:
@@ -278,6 +397,27 @@ def main(cue_path, out_path):
             place(mix, riser(0.9), t)
         elif kind == "chime":
             place(mix, bell([523.25, 659.25, 783.99, 1046.5], 3.0, 0.2, 1.1), t)
+        elif kind == "shing":
+            place(mix, shing(), t)
+        elif kind in ("impact", "impact_soft"):
+            place(mix, impact(0.32 if kind == "impact" else 0.18), t)
+        elif kind == "alert":
+            place(mix, alert(), t)
+        elif kind == "focus":
+            place(mix, focus_tick(), t, -0.2 + 0.2 * i)
+        elif kind == "confirm":
+            place(mix, bell([1046.5, 1567.98], 1.0, 0.14, 0.3), t)
+        elif kind == "stream":
+            place(mix, sparkle(), t, -0.6 if i == 0 else 0.6)
+        elif kind == "paper":
+            place(mix, paper(), t, -0.5 if i == 0 else 0.5)
+        elif kind == "stamp":
+            place(mix, stamp(), t, -0.5 if i == 0 else 0.5)
+        elif kind == "whip":
+            w = swoosh(0.32, 400, 5000, 0.2)
+            half = len(w) // 2
+            place(mix, w[:half], t, 0.6)
+            place(mix, w[half:], t + half / SR, -0.6)
 
     mix = mix[: int(duration * SR)]
     # gentle bus compression + soft clip, then normalise to -1 dBFS

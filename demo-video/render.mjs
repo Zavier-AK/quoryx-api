@@ -1,6 +1,7 @@
-// Renders index.html frame-by-frame to out/quoryx-mcp-demo.mp4 with synced sound.
-// Usage: npm run render            (full 1080p60 video)
-//        npm run render -- --fast  (540p30 draft for quick timing checks)
+// Renders a demo page (index.html by default) frame-by-frame to an MP4 in out/ with synced sound.
+// Usage: npm run render                          (full 1080p60 video)
+//        npm run render -- --fast                (540p30 draft for quick timing checks)
+//        npm run render -- --page experimental   (render experimental.html instead of index.html)
 import { chromium } from 'playwright-core';
 import { spawn, execFileSync } from 'node:child_process';
 import { writeFileSync, mkdirSync } from 'node:fs';
@@ -9,22 +10,25 @@ import ffmpeg from 'ffmpeg-static';
 
 const here = p => fileURLToPath(new URL(p, import.meta.url));
 const fast = process.argv.includes('--fast');
+const pageArg = process.argv.indexOf('--page');
+const pageName = pageArg > 0 ? process.argv[pageArg + 1] : 'index';
+const outName = pageName === 'index' ? 'quoryx-mcp-demo' : `quoryx-mcp-${pageName}`;
 mkdirSync(here('out'), { recursive: true });
 
 const browser = await chromium.launch({ executablePath: process.env.CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
 const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: fast ? 0.5 : 1 });
-await page.goto('file://' + here('index.html'));
+await page.goto('file://' + here(`${pageName}.html`));
 await page.evaluate(() => window.ready);
 
-const { fps: baseFps, duration, cues } = await page.evaluate(() => ({ fps: TL.fps, duration: TL.duration, cues: getCues() }));
+const { fps: baseFps, duration, music, cues } = await page.evaluate(() => ({ fps: TL.fps, duration: TL.duration, music: TL.music || 'groove', cues: getCues() }));
 const fps = fast ? 30 : baseFps;
-writeFileSync(here('out/cues.json'), JSON.stringify({ duration, cues }, null, 1));
-execFileSync('python3', [here('sfx.py'), here('out/cues.json'), here('out/sfx.wav')], { stdio: 'inherit' });
+writeFileSync(here(`out/${outName}-cues.json`), JSON.stringify({ duration, music, cues }, null, 1));
+execFileSync('python3', [here('sfx.py'), here(`out/${outName}-cues.json`), here(`out/${outName}.wav`)], { stdio: 'inherit' });
 
-const out = here(fast ? 'out/quoryx-mcp-demo-draft.mp4' : 'out/quoryx-mcp-demo.mp4');
+const out = here(fast ? `out/${outName}-draft.mp4` : `out/${outName}.mp4`);
 const enc = spawn(ffmpeg, ['-y', '-loglevel', 'error',
   '-f', 'image2pipe', '-framerate', String(fps), '-i', '-',
-  '-i', here('out/sfx.wav'),
+  '-i', here(`out/${outName}.wav`),
   '-c:v', 'libx264', '-preset', fast ? 'veryfast' : 'slow', '-crf', fast ? '23' : '16', '-pix_fmt', 'yuv420p',
   '-c:a', 'aac', '-b:a', '256k', '-shortest', '-movflags', '+faststart', out], { stdio: ['pipe', 'inherit', 'inherit'] });
 

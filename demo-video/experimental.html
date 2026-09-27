@@ -1,0 +1,618 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Quoryx MCP — experimental</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0A0D0C; }
+  body { font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; color: #ECEAE3; }
+  #stage { position: absolute; inset: 0; overflow: hidden; background: #0A0D0C; }
+  #glow { position: absolute; inset: -200px; background: radial-gradient(ellipse 45% 40% at 50% 50%, rgba(46,200,140,0.16), rgba(10,13,12,0) 70%); }
+  #vignette { position: absolute; inset: 0; background: radial-gradient(ellipse 75% 70% at 50% 50%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.7) 100%); pointer-events: none; }
+  #grain { position: absolute; inset: 0; width: 1920px; height: 1080px; opacity: 0.55; pointer-events: none; }
+  #line { position: absolute; left: 260px; top: 539px; width: 1400px; height: 2px; background: linear-gradient(90deg, transparent, #7CF5C1 20%, #E8FFF5 50%, #7CF5C1 80%, transparent);
+          box-shadow: 0 0 18px 4px rgba(61,220,151,0.55); }
+
+  /* 3D world */
+  #wrap { position: absolute; inset: 0; perspective: 2000px; perspective-origin: 960px 540px; }
+  #world { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-style: preserve-3d; transform-origin: 960px 540px; }
+  #frame { position: absolute; left: 300px; top: 100px; width: 1320px; height: 880px; transform-style: preserve-3d; transform-origin: 660px 440px; }
+
+  /* dark Claude-style chat */
+  #chat { position: absolute; inset: 0; border-radius: 24px; overflow: hidden; background: #262624; color: #E8E6DC;
+          box-shadow: 0 60px 120px -40px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.07); }
+  .top { position: absolute; left: 0; right: 0; top: 0; height: 60px; display: flex; align-items: center; gap: 18px; padding: 0 26px; }
+  .dots3 { display: flex; gap: 8px; }
+  .dots3 i { width: 12px; height: 12px; border-radius: 50%; background: #45443F; display: block; }
+  .brand { font-family: 'Source Serif 4', serif; font-size: 23px; font-weight: 500; color: #E8E6DC; }
+  .greet { position: absolute; left: 0; right: 0; top: 200px; text-align: center; font-family: 'Source Serif 4', serif; font-size: 48px; color: #E8E6DC; }
+  .msgs { position: absolute; top: 68px; left: 260px; width: 800px; bottom: 170px; overflow: hidden;
+          -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 36px, #000 calc(100% - 10px), transparent 100%); }
+  .scroll { position: absolute; left: 10px; right: 10px; top: 24px; display: flex; flex-direction: column; gap: 18px; }
+  .ubub { align-self: flex-end; max-width: 600px; padding: 14px 20px; border-radius: 20px; font-size: 19px; line-height: 1.45; background: #141413; }
+  .atext { font-family: 'Source Serif 4', serif; font-size: 21px; line-height: 1.5; min-height: 32px; }
+  .atext b { font-weight: 600; color: #fff; }
+  .composer { position: absolute; left: 280px; width: 760px; height: 132px; border-radius: 22px; background: #30302E; border: 1px solid #3D3D3A; }
+  .field { position: absolute; left: 24px; right: 24px; top: 22px; font-size: 20px; line-height: 30px; white-space: nowrap; }
+  .ph { position: absolute; left: 4px; top: 0; color: #8F8B80; }
+  .caret { display: inline-block; width: 2px; height: 26px; vertical-align: -5px; margin-left: 1px; background: #D97757; }
+  .crow { position: absolute; left: 18px; right: 16px; bottom: 16px; height: 40px; display: flex; align-items: center; gap: 10px; }
+  .plus { width: 36px; height: 36px; border-radius: 10px; border: 1px solid #45443F; display: grid; place-items: center; font-size: 22px; font-weight: 300; color: #A8A498; }
+  .conn { height: 34px; padding: 0 14px 0 10px; border-radius: 17px; display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 500;
+          font-family: 'Montserrat'; background: #1F2A25; color: #CFEFE0; box-shadow: 0 0 0 1px rgba(61,220,151,0.25), 0 0 18px rgba(61,220,151,0.18); }
+  .conn img { width: 20px; height: 20px; filter: invert(1); }
+  .conn .led { width: 8px; height: 8px; border-radius: 50%; background: #3DDC97; box-shadow: 0 0 8px #3DDC97; }
+  .grow { flex: 1; }
+  .model { font-size: 15px; color: #8F8B80; }
+  .send { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; color: #fff; }
+  .send svg { width: 20px; height: 20px; }
+
+  .tool { border-radius: 16px; padding: 14px 20px 10px; background: #1F1E1D; border: 1px solid #3A3936; }
+  .th { display: flex; align-items: center; gap: 10px; font-size: 16px; }
+  .th img { width: 22px; height: 22px; filter: invert(1); }
+  .th b { font-family: 'Montserrat'; font-weight: 700; font-size: 16px; }
+  .th code { font-family: ui-monospace, 'DejaVu Sans Mono', monospace; font-size: 14px; padding: 3px 8px; border-radius: 6px; background: #2C2B28; color: #A8A498; }
+  .status { margin-left: auto; position: relative; font-size: 14px; font-weight: 600; font-family: 'Montserrat'; height: 20px; width: 110px; }
+  .status span { position: absolute; right: 0; top: 0; white-space: nowrap; }
+  .run { background: linear-gradient(90deg, #6B6860 0%, #6B6860 35%, #F2F0E8 50%, #6B6860 65%, #6B6860 100%); background-size: 300% 100%; -webkit-background-clip: text; color: transparent; }
+  .done { color: #3DDC97; }
+  .steps { margin-top: 8px; display: flex; flex-direction: column; overflow: hidden; }
+  .step { display: flex; align-items: center; gap: 12px; height: 36px; font-size: 16px; }
+  .ic { width: 22px; height: 22px; position: relative; }
+  .ic svg { position: absolute; inset: 0; width: 22px; height: 22px; }
+  .meta { margin-left: auto; font-size: 14.5px; color: #8F8B80; font-variant-numeric: tabular-nums; }
+
+  /* the report card lives beside the chat so it can leave it in 3D */
+  #fcard { position: absolute; left: 270px; width: 780px; border-radius: 18px; padding: 20px 22px 18px; font-family: 'Montserrat';
+           background: #1C1D1B; border: 1px solid rgba(255,255,255,0.09); transform-origin: 390px 50%; overflow: hidden;
+           box-shadow: 0 40px 80px -30px rgba(0,0,0,0.9); }
+  .rh { display: flex; align-items: center; gap: 12px; }
+  .rh img { width: 32px; height: 32px; filter: invert(1); }
+  .rh .t1 { font-weight: 700; font-size: 18px; color: #F4F2EC; }
+  .rh .t2 { font-weight: 500; font-size: 13.5px; color: #8F8B80; margin-top: 2px; }
+  .pills { margin-left: auto; position: relative; width: 150px; height: 30px; }
+  .pill { position: absolute; right: 0; top: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.1em; padding: 7px 14px; border-radius: 999px; white-space: nowrap; }
+  .pill.ok { color: #3DDC97; background: rgba(61,220,151,0.1); border: 1px solid rgba(61,220,151,0.3); }
+  .pill.warn { color: #F5B544; background: rgba(245,181,68,0.1); border: 1px solid rgba(245,181,68,0.35); }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
+  .stat { background: #252624; border-radius: 12px; padding: 12px 16px; }
+  .stat .k { font-size: 11.5px; font-weight: 700; letter-spacing: 0.14em; color: #8F8B80; }
+  .stat .v { font-size: 34px; font-weight: 800; letter-spacing: -0.02em; margin-top: 2px; font-variant-numeric: tabular-nums; color: #F4F2EC; }
+  .stat .v small { font-size: 18px; font-weight: 600; color: #8F8B80; margin-left: 4px; letter-spacing: 0; }
+  .disc { overflow: hidden; }
+  .dh { display: flex; align-items: center; gap: 12px; margin-top: 20px; font-size: 20px; font-weight: 700; color: #F5B544; }
+  .dh .wi { width: 28px; height: 28px; border-radius: 50%; background: rgba(245,181,68,0.15); border: 1.5px solid #F5B544; display: grid; place-items: center; font-size: 16px; }
+  .dh .ds { font-size: 14px; font-weight: 500; color: #8F8B80; margin-left: 4px; }
+  .drows { margin: 12px 3px 3px; display: flex; flex-direction: column; gap: 10px; }
+  .drow { position: relative; display: flex; align-items: center; gap: 16px; height: 74px; padding: 0 18px; border-radius: 14px;
+          background: #232421; border: 1px solid rgba(245,181,68,0.18); }
+  .drow .di { width: 40px; height: 40px; border-radius: 12px; background: rgba(245,181,68,0.12); color: #F5B544; display: grid; place-items: center; font-size: 17px; font-weight: 800; }
+  .drow .dt { font-size: 17px; font-weight: 700; color: #F4F2EC; }
+  .drow .dsub { font-family: 'Source Serif 4', serif; font-size: 15px; color: #A8A498; margin-top: 3px; }
+  .drow .dr { margin-left: auto; text-align: right; }
+  .drow .amt { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; color: #F4F2EC; }
+  .drow .amt s { color: #8F8B80; font-weight: 600; text-decoration-color: #F5B544; }
+  .drow .tag { display: inline-block; margin-top: 5px; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; color: #F5B544; }
+  .drow .halo { position: absolute; inset: -1px; border-radius: 14px; box-shadow: 0 0 0 1.5px #F5B544, 0 0 30px rgba(245,181,68,0.35); opacity: 0; }
+  .sweep { position: absolute; top: -20%; bottom: -20%; width: 180px; left: 0; pointer-events: none;
+           background: linear-gradient(100deg, transparent, rgba(255,255,255,0.10), transparent); }
+
+  .res { display: flex; flex-direction: column; gap: 8px; }
+  .rrow { display: flex; align-items: center; gap: 12px; height: 38px; font-size: 17px; }
+  .rrow .ck { width: 24px; height: 24px; }
+  .rrow b { font-weight: 600; color: #F4F2EC; }
+  .rrow .meta { font-size: 14.5px; }
+
+  /* Xero / e-conomic panels (stylized, text labels only) */
+  .panel { position: absolute; top: 230px; width: 480px; height: 560px; border-radius: 22px; padding: 26px; transform-style: flat;
+           background: linear-gradient(160deg, rgba(40,44,42,0.96), rgba(22,24,23,0.96)); border: 1px solid rgba(255,255,255,0.1);
+           box-shadow: 0 50px 100px -40px rgba(0,0,0,0.9); font-family: 'Montserrat'; }
+  #px { left: -40px; }
+  #pe { left: 1480px; }
+  .ph1 { display: flex; align-items: center; gap: 12px; }
+  .ph1 .dot { width: 30px; height: 30px; border-radius: 50%; }
+  .ph1 .nm { font-size: 24px; font-weight: 700; color: #F4F2EC; }
+  .ph1 .sb { margin-left: auto; font-size: 13px; font-weight: 600; letter-spacing: 0.12em; color: #8F8B80; }
+  .skel { margin-top: 18px; height: 56px; border-radius: 12px; background: rgba(255,255,255,0.035); display: flex; align-items: center; gap: 12px; padding: 0 16px; }
+  .skel i { display: block; height: 9px; border-radius: 5px; background: rgba(255,255,255,0.09); }
+  .slot { position: absolute; left: 26px; right: 26px; bottom: 26px; height: 250px; border-radius: 14px; border: 1.5px dashed rgba(255,255,255,0.12); }
+  .paper { position: absolute; left: 26px; right: 26px; bottom: 26px; height: 250px; border-radius: 12px; background: #FBFAF6; color: #1A1A1A; padding: 22px 24px;
+           box-shadow: 0 30px 50px -20px rgba(0,0,0,0.8); overflow: hidden; }
+  .paper .pk { font-size: 11.5px; font-weight: 700; letter-spacing: 0.18em; color: #8A8A85; }
+  .paper .pn { font-size: 22px; font-weight: 800; margin-top: 6px; }
+  .paper .pc { font-family: 'Source Serif 4', serif; font-size: 16px; color: #555; margin-top: 2px; }
+  .paper .pl { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+  .paper .pl i { display: block; height: 8px; border-radius: 4px; background: #E6E4DD; }
+  .paper .pa { position: absolute; right: 24px; bottom: 22px; font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .stamp { position: absolute; right: 22px; top: 22px; padding: 6px 14px; border: 3px solid #E0922B; color: #E0922B; border-radius: 8px;
+           font-size: 20px; font-weight: 800; letter-spacing: 0.14em; transform-origin: 50% 50%; }
+
+  #streams { position: absolute; inset: 0; width: 1920px; height: 1080px; pointer-events: none; }
+
+  /* "any AI" flash windows */
+  .fw { position: absolute; left: 300px; top: 100px; width: 1320px; height: 880px; border-radius: 24px; overflow: hidden;
+        box-shadow: 0 60px 120px -40px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.07); }
+  #fg { background: #212121; color: #ECECEC; }
+  #fc { background: #181818; color: #D4D4D4; }
+  .fw .top .nm { font-size: 20px; font-weight: 600; }
+  .fcol { position: absolute; left: 280px; width: 760px; top: 300px; display: flex; flex-direction: column; gap: 22px; }
+  .fcol .ubub { background: #303030; font-size: 20px; }
+  .fline { display: flex; align-items: center; gap: 14px; font-size: 25px; }
+  .fline svg { width: 26px; height: 26px; }
+  #fc .code { position: absolute; left: 30px; top: 90px; width: 700px; }
+  #fc .code i { display: block; height: 10px; border-radius: 5px; margin: 0 0 16px; }
+  #fc .side { position: absolute; right: 0; top: 60px; bottom: 0; width: 560px; background: #1F1F1F; border-left: 1px solid #2B2B2B; padding: 40px 34px; display: flex; flex-direction: column; gap: 22px; }
+  #fc .side .ubub { background: #2B2B2B; align-self: flex-end; }
+  #fc .fline { font-size: 19px; }
+  #fcap { position: absolute; left: 0; right: 0; top: 1010px; text-align: center; font-family: 'Montserrat'; font-size: 24px; font-weight: 600; letter-spacing: 0.02em; }
+  #fcap span { color: #5E615F; }
+  #fcap span.on { color: #F4F2EC; }
+  #fcap em { font-style: normal; color: #3A3D3B; margin: 0 14px; }
+
+  /* end card */
+  #end { position: absolute; inset: 0; }
+  #logoBox { position: absolute; left: 810px; top: 250px; width: 300px; height: 300px; background: #000; mix-blend-mode: screen; overflow: hidden; isolation: isolate; }
+  #logoBox img { position: absolute; left: 30px; top: 30px; width: 240px; height: 240px; filter: invert(1); }
+  #logoBox .ls { position: absolute; top: -40px; bottom: -40px; width: 120px; mix-blend-mode: multiply;
+                 background: linear-gradient(100deg, #9FB3AA 0%, #FFFFFF 45%, #CFFFE9 55%, #9FB3AA 100%); }
+  #logoBox .tint { position: absolute; inset: 0; mix-blend-mode: multiply; background: #9FB3AA; }
+  #ring { position: absolute; left: 790px; top: 230px; width: 340px; height: 340px; border-radius: 50%; border: 1.5px solid rgba(61,220,151,0.6);
+          box-shadow: 0 0 40px rgba(61,220,151,0.35), inset 0 0 40px rgba(61,220,151,0.15); }
+  #endtext { position: absolute; left: 0; right: 0; top: 600px; text-align: center; font-family: 'Source Serif 4', serif; font-size: 92px; color: #F4F2EC; }
+  #tagline { position: absolute; left: 0; right: 0; top: 740px; text-align: center; font-family: 'Montserrat'; font-weight: 600; font-size: 19px;
+             letter-spacing: 0.22em; color: #7F8A85; text-transform: uppercase; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <filter id="mbw" x="-20%" width="140%"><feGaussianBlur stdDeviation="0 0"/></filter>
+  <filter id="mbg" x="-20%" width="140%"><feGaussianBlur stdDeviation="0 0"/></filter>
+  <filter id="mbc" x="-20%" width="140%"><feGaussianBlur stdDeviation="0 0"/></filter>
+</svg>
+<div id="stage">
+  <div id="glow"></div>
+  <div id="line"></div>
+  <div id="wrap"><div id="world">
+    <div class="panel" id="px">
+      <div class="ph1"><span class="dot" style="background:#1AB4D7;box-shadow:0 0 16px rgba(26,180,215,0.5)"></span><span class="nm">Xero</span><span class="sb">DRAFT INVOICES</span></div>
+      <div class="skel"><i style="width:30%"></i><i style="width:22%;margin-left:auto"></i></div>
+      <div class="skel"><i style="width:40%"></i><i style="width:18%;margin-left:auto"></i></div>
+      <div class="slot"></div>
+      <div class="paper"><div class="pk">INVOICE</div><div class="pn">INV-2026-085</div><div class="pc">Stripe customer · payout Sep 24</div>
+        <div class="pl"><i style="width:70%"></i><i style="width:52%"></i><i style="width:60%"></i></div><div class="pa">$3,980.00</div><div class="stamp">DRAFT</div></div>
+    </div>
+    <div class="panel" id="pe">
+      <div class="ph1"><span class="dot" style="background:#4F7BF7;box-shadow:0 0 16px rgba(79,123,247,0.5)"></span><span class="nm">e-conomic</span><span class="sb">DRAFT INVOICES</span></div>
+      <div class="skel"><i style="width:34%"></i><i style="width:20%;margin-left:auto"></i></div>
+      <div class="skel"><i style="width:26%"></i><i style="width:24%;margin-left:auto"></i></div>
+      <div class="slot"></div>
+      <div class="paper"><div class="pk">INVOICE</div><div class="pn">Invoice #1047</div><div class="pc">Brightline Ltd · amount adjustment</div>
+        <div class="pl"><i style="width:64%"></i><i style="width:48%"></i><i style="width:58%"></i></div><div class="pa">$36.00</div><div class="stamp">DRAFT</div></div>
+    </div>
+    <div id="frame">
+      <div id="chat"></div>
+      <div id="fcard" class="rep"></div>
+    </div>
+  </div></div>
+  <canvas id="streams" width="1920" height="1080"></canvas>
+
+  <div class="fw" id="fg">
+    <div class="top"><span class="dots3"><i style="background:#3A3A3A"></i><i style="background:#3A3A3A"></i><i style="background:#3A3A3A"></i></span><span class="nm">ChatGPT ⌄</span></div>
+    <div class="fcol"><div class="ubub" style="align-self:flex-end">Yes</div>
+      <div class="fline" data-ck><span>Draft invoice created in <b>Xero</b></span></div>
+      <div class="fline" data-ck><span>Draft invoice created in <b>e-conomic</b></span></div></div>
+  </div>
+  <div class="fw" id="fc">
+    <div class="top"><span class="dots3"><i style="background:#333"></i><i style="background:#333"></i><i style="background:#333"></i></span><span class="nm" style="font-family:Inter">Cursor</span></div>
+    <div class="code">
+      <i style="width:42%;background:#C678DD"></i><i style="width:66%;background:#61AFEF;margin-left:28px"></i><i style="width:38%;background:#98C379;margin-left:28px"></i>
+      <i style="width:58%;background:#E5C07B;margin-left:56px"></i><i style="width:30%;background:#56B6C2;margin-left:28px"></i><i style="width:48%;background:#C678DD"></i>
+      <i style="width:62%;background:#61AFEF;margin-left:28px"></i><i style="width:34%;background:#98C379;margin-left:56px"></i></div>
+    <div class="side"><div class="ubub">Yes</div>
+      <div class="fline" data-ck><span>Draft invoice created in <b>Xero</b></span></div>
+      <div class="fline" data-ck><span>Draft invoice created in <b>e-conomic</b></span></div></div>
+  </div>
+  <div id="fcap"><span>Claude</span><em>·</em><span>ChatGPT</span><em>·</em><span>Cursor</span><em>·</em><span>any MCP client</span></div>
+
+  <div id="end">
+    <div id="ring"></div>
+    <div id="logoBox"><img src="assets/quoryx-mark.svg"><div class="tint"></div><div class="ls"></div></div>
+    <div id="endtext">quoryx.net</div>
+    <div id="tagline">Close the month. Fix what's wrong. From any AI.</div>
+  </div>
+
+  <canvas id="grain" width="480" height="270"></canvas>
+  <div id="vignette"></div>
+</div>
+
+<script src="timeline-experimental.js"></script>
+<script src="lib/anim.js"></script>
+<script>
+const TL = window.TL;
+const MARK = 'assets/quoryx-mark.svg';
+const $ = id => document.getElementById(id);
+const smooth = easeInOutSine;
+
+const ICON = {
+  up: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10 16V4M4.5 9.5L10 4l5.5 5.5"/></svg>',
+  spin: '<svg class="sp" viewBox="0 0 22 22" fill="none"><circle cx="11" cy="11" r="8" stroke="#3A3936" stroke-width="2.4"/><path d="M11 3a8 8 0 0 1 8 8" stroke="#3DDC97" stroke-width="2.4" stroke-linecap="round"/></svg>',
+  check: '<svg class="ck" viewBox="0 0 22 22"><circle cx="11" cy="11" r="10" fill="#3DDC97"/><path d="M6.5 11.3l3 3 6-6.3" fill="none" stroke="#0C1A14" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="15"/></svg>',
+};
+const STEPS = [['Reconciliation', '1,284 txns'], ['Invoice matching', '412 of 417'], ['Accruals & journals', '38 entries']];
+const DISC = [
+  ['≠', 'Amount mismatch', 'Brightline Ltd · INV-2026-079', '<s>$1,240.00</s> $1,204.00', '−$36.00 DIFFERENCE'],
+  ['?', 'Missing invoice', 'Stripe payout · Sep 24', '$3,980.00', 'NO INVOICE'],
+  ['×2', 'Duplicate payment', 'Acme Corp · INV-2026-082', '$8,900.50', 'PAID TWICE'],
+];
+const RES = [['Draft invoice created in <b>Xero</b>', 'INV-2026-085 · $3,980.00'],
+             ['Draft invoice created in <b>e-conomic</b>', '#1047 · $36.00'],
+             ['Duplicate payment flagged for refund', '$8,900.50']];
+
+// ---------- build DOM ----------
+$('chat').innerHTML = `
+  <div class="top"><span class="dots3"><i></i><i></i><i></i></span><span class="brand">Claude</span></div>
+  <div class="greet">Good evening</div>
+  <div class="msgs"><div class="scroll">
+    <div class="ubub" id="ub1">${TL.prompt}</div>
+    <div class="atext" id="a1"></div>
+    <div class="tool" id="tool">
+      <div class="th"><img src="${MARK}"><b>Quoryx</b><code>month_end_close</code>
+        <span class="status"><span class="run">Running…</span><span class="done">✓ Complete</span></span></div>
+      <div class="steps">${STEPS.map(s => `<div class="step"><span class="ic">${ICON.spin}${ICON.check}</span><span>${s[0]}</span><span class="meta">${s[1]}</span></div>`).join('')}</div>
+    </div>
+    <div id="ph"></div>
+    <div class="atext" id="a2"></div>
+    <div class="ubub" id="ub2">${TL.answer}</div>
+    <div class="res" id="res"><div class="atext" id="a3"></div>
+      ${RES.map(r => `<div class="rrow"><span class="ic">${ICON.check}</span><span>${r[0]}</span><span class="meta">${r[1]}</span></div>`).join('')}</div>
+  </div></div>
+  <div class="composer" id="comp">
+    <div class="field"><span class="ph" id="ph1">How can I help you today?</span><span id="typed"></span><span class="caret" id="caret"></span></div>
+    <div class="crow"><span class="plus">+</span><span class="conn"><img src="${MARK}">Quoryx<span class="led"></span></span>
+      <span class="grow"></span><span class="model">Claude</span><span class="send" id="send">${ICON.up}</span></div>
+  </div>`;
+$('fcard').innerHTML = `
+  <div class="rh"><img src="${MARK}"><div><div class="t1">Month-end close</div><div class="t2">September 2026 · Report ready</div></div>
+    <div class="pills"><span class="pill ok" id="pok">COMPLETE</span><span class="pill warn" id="pwarn">3 ISSUES</span></div></div>
+  <div class="stats">
+    <div class="stat"><div class="k">AUTO-MATCH</div><div class="v" style="color:#3DDC97"><span id="n1">98.9</span>%</div></div>
+    <div class="stat"><div class="k">TIME SAVED</div><div class="v">~<span id="n2">26</span><small>hrs</small></div></div>
+    <div class="stat"><div class="k">TRANSACTIONS</div><div class="v"><span id="n3">1,284</span></div></div>
+  </div>
+  <div class="disc" id="disc"><div id="discIn">
+    <div class="dh"><span class="wi">!</span>3 discrepancies found<span class="ds">need your review</span></div>
+    <div class="drows">${DISC.map(d => `<div class="drow"><span class="di">${d[0]}</span><div><div class="dt">${d[1]}</div><div class="dsub">${d[2]}</div></div>
+      <div class="dr"><div class="amt">${d[3]}</div><div class="tag">${d[4]}</div></div><div class="halo"></div></div>`).join('')}</div>
+  </div></div>
+  <div class="sweep" id="sweep"></div>`;
+document.querySelectorAll('.fw [data-ck]').forEach(e => e.insertAdjacentHTML('afterbegin', ICON.check.replace('class="ck"', '')));
+
+const E = {
+  ub1: $('ub1'), a1: $('a1'), tool: $('tool'), run: document.querySelector('.run'), done: document.querySelector('.done'),
+  steps: [...document.querySelectorAll('.step')], stepsBox: document.querySelector('.steps'), ph: $('ph'), a2: $('a2'), ub2: $('ub2'),
+  res: $('res'), a3: $('a3'), rrows: [...document.querySelectorAll('.rrow')], scroll: document.querySelector('.scroll'),
+  greet: document.querySelector('.greet'), comp: $('comp'), ph1: $('ph1'), typed: $('typed'), caret: $('caret'), send: $('send'),
+  card: $('fcard'), disc: $('disc'), discIn: $('discIn'), drows: [...document.querySelectorAll('.drow')], pok: $('pok'), pwarn: $('pwarn'),
+  stats: [...document.querySelectorAll('.stat')], n1: $('n1'), n2: $('n2'), n3: $('n3'), sweep: $('sweep'),
+};
+
+// ---------- derived beats ----------
+const T = {};
+T.chars = typingTimes(TL.prompt, TL.type.start, TL.type.charDelay, TL.type.seed);
+T.typeEnd = T.chars[T.chars.length - 1];
+T.send = T.typeEnd + 0.25;
+T.reply = T.send + 0.35;
+T.tool = T.send + 0.6;
+T.steps = [T.tool + 0.3, T.tool + 0.55, T.tool + 0.8];
+T.toolDone = T.steps[2] + 0.1;
+T.report = T.toolDone + 0.2;
+T.yesChars = typingTimes(TL.answer, TL.yes.start, TL.yes.charDelay, TL.yes.seed);
+T.yesSend = T.yesChars[T.yesChars.length - 1] + 0.2;
+T.resText = TL.resolve + 0.2;
+T.streams = [TL.resolve + 0.6, TL.resolve + 0.9];
+T.papers = [TL.resolve + 1.15, TL.resolve + 1.45];
+T.rrows = [T.papers[0] + 0.05, T.papers[1] + 0.05, T.papers[1] + 0.35];
+T.whips = [TL.flash, TL.flash + 0.85, TL.flash + 1.7, TL.logo];
+T.chime = TL.logo + 0.45;
+
+// ---------- layout measurements (taken once, with everything in flow) ----------
+const L = {};
+function measure() {
+  const b = e => e.offsetTop + e.offsetHeight + 24;
+  const view = document.querySelector('.msgs').clientHeight - 24;
+  L.stepsH = E.stepsBox.offsetHeight + 8;
+  L.discH = E.discIn.offsetHeight;
+  L.rowsY = E.drows.map(r => r.offsetTop + r.offsetHeight / 2); // relative to the card
+  E.disc.style.height = '0px';
+  L.compactH = E.card.offsetHeight;
+  E.ph.style.height = L.compactH + 'px';
+  L.discTop = E.disc.offsetTop;
+  L.discHeadY = L.discTop + 24;
+  const beats = [[T.send, b(E.ub1)], [T.reply, b(E.a1)], [T.tool, b(E.tool)], [T.report, b(E.ph) - L.stepsH],
+                 [TL.ask, b(E.a2) - L.stepsH], [T.yesSend, b(E.ub2) - L.stepsH], [T.resText, b(E.res) - L.stepsH]];
+  L.scroll = beats.map(([t, y]) => [t, Math.max(0, y - view)]);
+  L.phTop = E.ph.offsetTop;
+}
+
+function chatScroll(t) {
+  let y = 0, prev = 0;
+  for (const [at, target] of L.scroll) { y += (target - prev) * easeInOut(prog(t, at, at + 0.6)); prev = target; }
+  return y;
+}
+
+// ---------- camera ----------
+// keyframes: [t, x, y, z, rx, ry]
+const CAM = [
+  [0.0, 0, 90, -900, 24, -16],
+  [TL.intro.window + 0.9, 0, 20, -80, 7, -5],
+  [T.typeEnd, 0, 150, 90, 2, -1],
+  [T.send + 0.6, 0, 0, 0, 0, 0],
+  [T.report, 0, 40, 0, 0, 2],
+  [TL.lift + 0.8, 0, 0, -40, -2, -5],
+  [TL.focus[2] + 0.6, 0, 0, -30, 1, 4],
+  [TL.flyBack + 0.5, 0, 60, 0, 0, 0],
+  [TL.yes.start + 0.1, 0, 170, 150, 2, 0],
+  [T.yesSend + 0.2, 0, 150, 120, 1, 0],
+  [TL.resolve + 0.8, 0, 30, -260, 9, 0],
+  [TL.flash, 0, 20, -300, 11, 3],
+];
+function camera(t) {
+  let i = 0;
+  while (i < CAM.length - 2 && t > CAM[i + 1][0]) i++;
+  const a = CAM[i], b = CAM[i + 1], p = smooth(prog(t, a[0], b[0]));
+  return a.slice(1).map((v, k) => lerp(v, b[k + 1], p));
+}
+
+// ---------- film grain ----------
+const grainCtx = $('grain').getContext('2d');
+const grainTiles = [0, 1, 2, 3].map(k => {
+  const r = rng(100 + k), img = grainCtx.createImageData(480, 270);
+  for (let i = 0; i < img.data.length; i += 4) { const v = r() * 255; img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = r() < 0.5 ? 10 : 0; }
+  return img;
+});
+
+// ---------- data streams ----------
+const sctx = $('streams').getContext('2d');
+function center(el, fx = 0.5, fy = 0.5) { const r = el.getBoundingClientRect(); return [r.left + r.width * fx, r.top + r.height * fy]; }
+function drawStream(t, t0, from, to, seed) {
+  const dur = 0.75;
+  if (t < t0 || t > t0 + dur + 0.5) return;
+  const [ax, ay] = from, [bx, by] = to;
+  const c1 = [lerp(ax, bx, 0.25), Math.min(ay, by) - 260], c2 = [lerp(ax, bx, 0.75), Math.min(ay, by) - 200];
+  const pt = u => { const v = 1 - u; return [v*v*v*ax + 3*v*v*u*c1[0] + 3*v*u*u*c2[0] + u*u*u*bx, v*v*v*ay + 3*v*v*u*c1[1] + 3*v*u*u*c2[1] + u*u*u*by]; };
+  const head = (t - t0) / dur, fade = 1 - prog(t, t0 + dur, t0 + dur + 0.5);
+  // faint trail
+  sctx.strokeStyle = `rgba(61,220,151,${0.25 * fade})`; sctx.lineWidth = 1.5; sctx.beginPath();
+  for (let u = 0; u <= Math.min(1, head); u += 0.02) { const [x, y] = pt(u); u === 0 ? sctx.moveTo(x, y) : sctx.lineTo(x, y); }
+  sctx.stroke();
+  const r = rng(seed);
+  for (let i = 0; i < 46; i++) {
+    const lag = r() * 0.35, jit = (r() - 0.5) * 16, size = 1.5 + r() * 3;
+    const u = head - lag;
+    if (u < 0 || u > 1) continue;
+    const [x, y] = pt(u);
+    const a = (1 - lag / 0.35) * fade;
+    sctx.fillStyle = `rgba(160,255,210,${a})`; sctx.shadowColor = '#3DDC97'; sctx.shadowBlur = 14;
+    sctx.beginPath(); sctx.arc(x + jit * 0.4, y + jit, size, 0, Math.PI * 2); sctx.fill();
+  }
+  sctx.shadowBlur = 0;
+  if (head >= 1) { // impact flash at the destination
+    const f = 1 - prog(t, t0 + dur, t0 + dur + 0.35);
+    const g = sctx.createRadialGradient(bx, by, 0, bx, by, 140);
+    g.addColorStop(0, `rgba(61,220,151,${0.45 * f})`); g.addColorStop(1, 'rgba(61,220,151,0)');
+    sctx.fillStyle = g; sctx.fillRect(bx - 140, by - 140, 280, 280);
+  }
+}
+
+function setBlur(id, x) { document.querySelector(`#${id} feGaussianBlur`).setAttribute('stdDeviation', `${x.toFixed(1)} 0`); }
+
+// ---------- render ----------
+function render(t) {
+  const lift = spring(prog(t, TL.lift, TL.lift + 0.9));
+  const back = easeInOut(prog(t, TL.flyBack, TL.flyBack + 0.55));
+  const out = lift * (1 - back); // 0 = in chat, 1 = floating
+
+  // background + intro light line
+  const lp = easeOutQuint(prog(t, TL.intro.line, TL.intro.line + 0.55));
+  set($('line'), { transform: `scaleX(${lp})`, opacity: 1 - prog(t, TL.intro.window + 0.2, TL.intro.window + 0.8) });
+  $('glow').style.opacity = 0.6 + 0.4 * Math.sin(t * 0.6) * 0.5 + 0.5 * bump(t, TL.intro.window, TL.intro.window + 1.2) + 0.4 * out;
+  $('glow').style.transform = `translate(${Math.sin(t * 0.3) * 40}px, ${Math.cos(t * 0.25) * 30}px)`;
+
+  // camera
+  const [cx, cy, cz, rx, ry] = camera(t);
+  $('world').style.transform = `translate3d(${-cx}px, ${-cy}px, ${cz}px) rotateX(${rx}deg) rotateY(${ry}deg)`;
+  const winIn = easeOutQuint(prog(t, TL.intro.window, TL.intro.window + 1.0));
+
+  // resolve: chat steps back, panels fly in from the sides
+  const rp = easeInOut(prog(t, TL.resolve, TL.resolve + 0.8));
+  set($('frame'), { transform: `translate3d(0, ${lerp(120, 0, winIn)}px, ${-360 * rp}px)`, opacity: prog(t, TL.intro.window, TL.intro.window + 0.35) });
+  [['px', -1], ['pe', 1]].forEach(([id, side], i) => {
+    const p = spring(prog(t, TL.resolve + 0.1 + i * 0.12, TL.resolve + 1.0 + i * 0.12));
+    set($(id), { transform: `translate3d(${side * lerp(900, 0, p)}px, ${lerp(60, 0, p)}px, ${lerp(-500, 80, p)}px) rotateY(${-side * lerp(50, 20, p)}deg)`,
+                 opacity: prog(t, TL.resolve + 0.1 + i * 0.12, TL.resolve + 0.35 + i * 0.12) });
+  });
+  document.querySelectorAll('.panel').forEach((pn, i) => {
+    const paper = pn.querySelector('.paper'), stamp = pn.querySelector('.stamp'), tp = T.papers[i];
+    const dp = spring(prog(t, tp, tp + 0.6));
+    set(paper, { opacity: prog(t, tp, tp + 0.08), transform: `translateY(${lerp(-420, 0, dp)}px) rotate(${lerp(-9, 0, dp)}deg)` });
+    const sp = spring(prog(t, tp + 0.3, tp + 0.65));
+    set(stamp, { opacity: prog(t, tp + 0.3, tp + 0.36), transform: `rotate(-12deg) scale(${lerp(2.2, 1, sp)})` });
+    pn.style.boxShadow = `0 50px 100px -40px rgba(0,0,0,0.9), 0 0 ${60 * bump(t, tp - 0.1, tp + 0.6)}px rgba(61,220,151,${0.5 * bump(t, tp - 0.1, tp + 0.6)})`;
+  });
+
+  // chat: typing
+  const n = T.chars.filter(c => c <= t).length, yn = T.yesChars.filter(c => c <= t).length;
+  const sent = t >= T.send, yesTyping = t >= TL.yes.start - 0.3 && t < T.yesSend;
+  E.typed.textContent = !sent ? TL.prompt.slice(0, n) : (t < T.yesSend ? TL.answer.slice(0, yn) : '');
+  E.ph1.style.opacity = (!sent && n === 0) || (sent && !yn && t > T.send + 0.35) || t > T.yesSend + 0.3 ? 1 : 0;
+  if (sent) E.ph1.textContent = 'Reply to Claude…';
+  const typingNow = (n > 0 && t < T.typeEnd + 0.15) || (yn > 0 && t < T.yesSend);
+  E.caret.style.opacity = typingNow ? 1 : (Math.floor(t * 2.2) % 2 === 0 ? 1 : 0);
+  const press = Math.max(bump(t, T.send - 0.08, T.send + 0.14), bump(t, T.yesSend - 0.08, T.yesSend + 0.14));
+  const active = (n > 0 && !sent) || (yn > 0 && t < T.yesSend);
+  set(E.send, { background: active ? '#D97757' : '#5A4A42', transform: `scale(${1 - 0.14 * press})`, boxShadow: active ? '0 0 22px rgba(217,119,87,0.45)' : 'none' });
+  const drop = easeInOut(prog(t, T.send - 0.02, T.send + 0.55));
+  E.comp.style.top = lerp(320, 880 - 28 - 132, drop) + 'px';
+  set(E.greet, { opacity: 1 - prog(t, T.send - 0.05, T.send + 0.1) });
+
+  const bubble = (el, at) => { const p = easeOutQuint(prog(t, at + 0.04, at + 0.6));
+    set(el, { opacity: prog(t, at + 0.1, at + 0.26), transform: `translateY(${lerp(90, 0, p)}px) scale(${lerp(0.94, 1, p)})` }); };
+  bubble(E.ub1, T.send); bubble(E.ub2, T.yesSend);
+  const stream = (el, text, at, dur) => { const w = text.split(' '), k = Math.ceil(prog(t, at, at + dur) * w.length);
+    el.innerHTML = w.slice(0, k).join(' '); };
+  stream(E.a1, TL.reply, T.reply, 0.45);
+  const q = TL.question.split(' ');
+  const qk = Math.ceil(prog(t, TL.ask, TL.ask + 0.55) * q.length);
+  E.a2.innerHTML = q.slice(0, qk).join(' ').replace('Should I resolve them?', '<b>Should I resolve them?</b>');
+  stream(E.a3, "Done. Here's what I changed:", T.resText, 0.4);
+
+  // tool card
+  const tp = spring(prog(t, T.tool, T.tool + 0.7));
+  set(E.tool, { opacity: prog(t, T.tool, T.tool + 0.2), transform: `translateY(${(1 - tp) * 18}px)` });
+  E.run.style.opacity = t >= T.toolDone ? 0 : 1;
+  E.run.style.backgroundPosition = `${100 - ((t * 70) % 100) * 1.5}% 0`;
+  set(E.done, { opacity: prog(t, T.toolDone, T.toolDone + 0.12) });
+  const collapse = easeInOut(prog(t, T.report - 0.05, T.report + 0.5));
+  set(E.stepsBox, { height: lerp(L.stepsH - 8, 0, collapse) + 'px', marginTop: lerp(8, 0, collapse) + 'px', opacity: 1 - collapse });
+  E.steps.forEach((st, i) => {
+    const appear = i === 0 ? T.tool + 0.1 : T.steps[i - 1];
+    st.style.opacity = easeOut(prog(t, appear, appear + 0.25));
+    const on = t >= T.steps[i];
+    set(st.querySelector('.sp'), { opacity: on ? 0 : 1, transform: `rotate(${t * 520}deg)` });
+    set(st.querySelector('.ck'), { opacity: on ? 1 : 0, transform: `scale(${lerp(0.4, 1, spring(prog(t, T.steps[i], T.steps[i] + 0.45)))})` });
+    st.querySelector('.ck path').style.strokeDashoffset = 15 * (1 - easeOut(prog(t, T.steps[i] + 0.05, T.steps[i] + 0.3)));
+    st.querySelector('.meta').style.opacity = prog(t, T.steps[i], T.steps[i] + 0.2);
+  });
+  // resolution rows
+  E.rrows.forEach((row, i) => {
+    const at = T.rrows[i], p = easeOut(prog(t, at, at + 0.35));
+    set(row, { opacity: p, transform: `translateX(${(1 - p) * -14}px)` });
+    set(row.querySelector('.ck'), { transform: `scale(${lerp(0.4, 1, spring(prog(t, at, at + 0.45)))})` });
+    row.querySelector('.ck path').style.strokeDashoffset = 15 * (1 - easeOut(prog(t, at + 0.05, at + 0.3)));
+  });
+  set(E.res, { opacity: t >= T.resText ? 1 : 0 });
+
+  const sy = chatScroll(t);
+  E.scroll.style.transform = `translateY(${-sy}px)`;
+
+  // chat depth-of-field while the card floats
+  set($('chat'), { filter: out > 0.01 ? `blur(${7 * out}px) brightness(${1 - 0.55 * out})` : 'none' });
+
+  // ---------- report card ----------
+  const R = T.report, rin = spring(prog(t, R, R + 0.8));
+  const restTop = 68 + 24 + L.phTop - L.stepsH * collapse - sy;
+  // disc section height: grows after lift, collapses on fly-back
+  const dOpen = easeInOut(prog(t, TL.discrepancies, TL.discrepancies + 0.6)) * (1 - easeInOut(prog(t, TL.flyBack - 0.1, TL.flyBack + 0.4)));
+  E.disc.style.height = (L.discH * dOpen) + 'px';
+  const cardH = L.compactH + L.discH * dOpen;
+  // focus point inside the card that the camera centres on
+  const fKeys = [[TL.lift, cardH / 2], [TL.discrepancies + 0.3, L.discTop + L.discH / 2]]
+    .concat(TL.focus.map((f, i) => [f, L.rowsY[i]]))
+    .concat([[TL.focus[2] + 0.7, L.discTop + L.discH / 2]]);
+  let fy = fKeys[0][1];
+  for (let i = 1; i < fKeys.length; i++) fy = lerp(fy, fKeys[i][1], easeInOut(prog(t, fKeys[i][0] - 0.1, fKeys[i][0] + 0.45)));
+  const focusWorldY = 100 + restTop + fy;
+  const ty = (540 - focusWorldY) * out, tz = 420 * out;
+  const orbit = Math.sin((t - TL.lift) * 0.9) * 7 * out;
+  set(E.card, { top: restTop + 'px', opacity: prog(t, R, R + 0.2) * (1 - prog(restTop, 70, 20)),
+    transform: `translate3d(0, ${ty + (1 - rin) * 30}px, ${tz}px) rotateY(${orbit}deg) rotateX(${-3 * out}deg) scale(${lerp(0.96, 1, rin)})`,
+    boxShadow: `0 40px 80px -30px rgba(0,0,0,0.9), 0 0 ${80 * out}px rgba(61,220,151,${0.12 * out})` });
+  E.stats.forEach((s, i) => { const p = easeOut(prog(t, R + 0.12 + i * 0.07, R + 0.5 + i * 0.07)); set(s, { opacity: p, transform: `translateY(${(1 - p) * 10}px)` }); });
+  const cnt = easeOut(prog(t, R + 0.15, R + 1.0));
+  E.n1.textContent = (98.9 * cnt).toFixed(1); E.n2.textContent = Math.round(26 * cnt); E.n3.textContent = Math.round(1284 * cnt).toLocaleString('en-US');
+  const warn = prog(t, TL.discrepancies + 0.1, TL.discrepancies + 0.3);
+  set(E.pok, { opacity: 1 - warn }); set(E.pwarn, { opacity: warn, transform: `scale(${lerp(0.7, 1, spring(prog(t, TL.discrepancies + 0.1, TL.discrepancies + 0.6)))})` });
+  E.drows.forEach((row, i) => {
+    const at = TL.discrepancies + 0.25 + i * 0.12, p = easeOut(prog(t, at, at + 0.45));
+    const f = TL.focus[i];
+    const inFocus = bump(t, f - 0.15, f + 0.85);
+    const otherFocus = TL.focus.some((g, j) => j !== i && t > g - 0.1 && t < g + 0.7) ? 1 : 0;
+    const blurAmt = otherFocus * (1 - inFocus) * 2.5 * prog(t, TL.focus[0] - 0.1, TL.focus[0] + 0.2) * (1 - prog(t, TL.focus[2] + 0.6, TL.focus[2] + 0.9));
+    set(row, { opacity: p * (1 - 0.45 * blurAmt / 2.5), transform: `translateY(${(1 - p) * 16}px) scale(${1 + 0.03 * inFocus})`, filter: blurAmt > 0.05 ? `blur(${blurAmt}px)` : 'none' });
+    row.querySelector('.halo').style.opacity = inFocus;
+  });
+  const sw = prog(t, TL.lift + 0.3, TL.lift + 1.1);
+  set(E.sweep, { transform: `translateX(${lerp(-200, 1000, sw)}px)`, opacity: sw > 0 && sw < 1 ? 1 : 0 });
+
+  // ---------- data streams ----------
+  sctx.clearRect(0, 0, 1920, 1080);
+  if (t > T.streams[0] - 0.01 && t < T.papers[1] + 1) {
+    drawStream(t, T.streams[0], center(E.res, 0.02, 0.4), center($('px').querySelector('.slot')), 11);
+    drawStream(t, T.streams[1], center(E.res, 0.98, 0.4), center($('pe').querySelector('.slot')), 23);
+  }
+
+  // ---------- any-AI flash: whip pans ----------
+  const [w0, w1, w2, w3] = T.whips, wd = 0.28;
+  const whipOut = (at) => easeInOut(prog(t, at, at + wd));
+  const worldOut = whipOut(w0);
+  set($('wrap'), { transform: `translateX(${-2300 * worldOut}px)`, filter: `url(#mbw)`, opacity: t > w0 + wd ? 0 : 1 });
+  setBlur('mbw', 70 * Math.sin(Math.PI * worldOut));
+  $('streams').style.opacity = 1 - worldOut;
+  const fwin = (id, fid, tin, tout) => {
+    const pin = easeInOut(prog(t, tin, tin + wd)), pout = easeInOut(prog(t, tout, tout + wd));
+    const x = 2300 * (1 - pin) - 2300 * pout;
+    set($(id), { transform: `translateX(${x}px) scale(${1 + 0.04 * prog(t, tin, tout + wd)})`, opacity: t < tin || t > tout + wd ? 0 : 1, filter: `url(#${fid})` });
+    setBlur(fid, 70 * (Math.sin(Math.PI * pin) + Math.sin(Math.PI * pout)));
+    $(id).querySelectorAll('[data-ck]').forEach((l, i) => { const p = easeOut(prog(t, tin + 0.15 + i * 0.1, tin + 0.4 + i * 0.1)); set(l, { opacity: p, transform: `translateY(${(1 - p) * 10}px)` }); });
+  };
+  fwin('fg', 'mbg', w0 + 0.05, w1);
+  fwin('fc', 'mbc', w1 + 0.05, w2);
+  const capP = prog(t, w0, w0 + 0.2) * (1 - prog(t, w3, w3 + 0.3));
+  $('fcap').style.opacity = capP;
+  const capOn = t < w1 + 0.05 ? 1 : t < w2 ? 2 : 3;
+  [...$('fcap').querySelectorAll('span')].forEach((s, i) => s.classList.toggle("on", i === capOn));
+
+  // ---------- end card ----------
+  const L0 = TL.logo;
+  const lg = easeOutQuint(prog(t, L0 + 0.1, L0 + 1.1));
+  // fade the blended logo box itself: an opacity on #end would isolate it and show the black box
+  set($('logoBox'), { opacity: prog(t, L0, L0 + 0.4), transform: `translateY(${lerp(30, 0, lg)}px) scale(${lerp(0.7, 1, lg)})` });
+  const lsw = prog(t, L0 + 0.35, L0 + 1.35);
+  set(document.querySelector('#logoBox .ls'), { transform: `translateX(${lerp(-160, 340, lsw)}px)`, opacity: lsw > 0 && lsw < 1 ? 1 : 0 });
+  document.querySelector('#logoBox .tint').style.opacity = 1 - prog(t, L0 + 1.2, L0 + 1.8);
+  const rgp = prog(t, T.chime - 0.05, T.chime + 1.6);
+  set($('ring'), { opacity: rgp > 0 ? (1 - rgp) * 0.9 + 0.1 * (rgp > 0 ? 1 : 0) : 0, transform: `scale(${lerp(0.7, 1.25, easeOut(rgp))})` });
+  const ep = easeOutQuint(prog(t, L0 + 0.55, L0 + 1.25));
+  set($('endtext'), { opacity: prog(t, L0 + 0.55, L0 + 0.9), transform: `translateY(${(1 - ep) * 26}px)`, letterSpacing: lerp(0.08, 0, ep) + 'em' });
+  const gp = easeOut(prog(t, L0 + 0.9, L0 + 1.4));
+  set($('tagline'), { opacity: gp, transform: `translateY(${(1 - gp) * 12}px)` });
+
+  // film grain
+  grainCtx.putImageData(grainTiles[Math.floor(t * 24) % 4], 0, 0);
+}
+
+// Sound cue list — consumed by sfx.py.
+function getCues() {
+  const c = [];
+  c.push({ t: TL.intro.line, type: 'shing' });
+  c.push({ t: TL.intro.window, type: 'whoosh_soft' });
+  T.chars.forEach((x, i) => c.push({ t: x, type: TL.prompt[i] === ' ' ? 'space' : 'key' }));
+  c.push({ t: T.send - 0.02, type: 'send' }, { t: T.send + 0.1, type: 'swoosh_up' }, { t: T.tool, type: 'pop' });
+  T.steps.forEach((s, i) => c.push({ t: s, type: 'check', i }));
+  c.push({ t: T.report, type: 'card' });
+  c.push({ t: TL.lift, type: 'impact' });
+  c.push({ t: TL.discrepancies + 0.1, type: 'alert', i: 0 });
+  TL.focus.forEach((f, i) => c.push({ t: f, type: 'focus', i }));
+  c.push({ t: TL.flyBack, type: 'impact_soft' });
+  c.push({ t: TL.ask, type: 'pop' });
+  T.yesChars.forEach(x => c.push({ t: x, type: 'key' }));
+  c.push({ t: T.yesSend - 0.02, type: 'send' }, { t: T.yesSend + 0.05, type: 'confirm' });
+  c.push({ t: TL.resolve, type: 'whoosh_soft' });
+  T.streams.forEach((s, i) => c.push({ t: s, type: 'stream', i }));
+  T.papers.forEach((p, i) => { c.push({ t: p + 0.2, type: 'paper', i }); c.push({ t: p + 0.3, type: 'stamp', i }); });
+  T.rrows.forEach((r, i) => c.push({ t: r, type: 'check', i }));
+  T.whips.forEach((w, i) => c.push({ t: w - 0.03, type: 'whip', i }));
+  c.push({ t: T.chime, type: 'chime' });
+  // markers the soundtrack arranges around (not sounds themselves)
+  c.push({ t: TL.discrepancies, type: 'marker', name: 'discrepancies' }, { t: T.yesSend, type: 'marker', name: 'yes' });
+  return c.sort((a, b) => a.t - b.t);
+}
+
+window.render = render; window.getCues = getCues;
+const qt = new URLSearchParams(location.search).get('t');
+window.ready = fontsReady().then(() => { measure(); render(qt ? parseFloat(qt) : 0); });
+</script>
+</body>
+</html>
